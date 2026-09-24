@@ -1,0 +1,52 @@
+# Entornos virtuales de Python
+.venv/
+.venv-*/
+venv/
+env/
+
+# Archivos compilados y caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+
+# Cobertura y paquetes generados
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+build/
+dist/
+*.egg-info/
+
+# Variables locales y credenciales
+.env
+.env.*
+!.env.example
+
+# Datos locales: base de datos, clave de sesion y tickets
+/data/
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.sqlite*-journal
+*.sqlite*-shm
+*.sqlite*-wal
+
+# Logs y archivos temporales
+*.log
+*.tmp
+*.swp
+*~
+
+# Archivos del sistema operativo
+.DS_Store
+._*
+Thumbs.db
+Desktop.ini
