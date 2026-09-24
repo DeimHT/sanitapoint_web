@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}SanitaPoint{% endblock %}</title>
+  <link rel="stylesheet" href="/static/css/style.css?v=4">
+  <script src="/static/js/api.js?v=4"></script>
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+  <header class="topnav">
+    <span class="brand">🚿 SanitaPoint</span>
+    <a href="/" data-nav="venta" hidden>Venta</a>
+    <a href="/caja" data-nav="caja" hidden>Caja</a>
+    <a href="/historial" data-nav="historial" hidden>Historial</a>
+    <a href="/cierres" data-nav="cierres" hidden>Cierres</a>
+    <a href="/usuarios" data-nav="clientes" hidden>Clientes</a>
+    <a href="/reportes" data-nav="reportes" hidden>Reportes</a>
+    <a href="/config" data-nav="config" hidden>Config</a>
+    <a href="/cuentas" data-nav="cuentas" hidden>Cuentas</a>
+    <span class="nav-spacer"></span>
+    <span id="nav_user" class="nav-user"></span>
+    <button id="nav_logout" class="btn btn-gris nav-logout" hidden>Salir</button>
+  </header>
+  <div id="statusbar">Cargando estado…</div>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

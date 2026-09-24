@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+{% block title %}Venta – SanitaPoint{% endblock %}
+{% block content %}
+<div class="card">
+  <h2>Forma de pago</h2>
+  <div class="row" id="pagos">
+    <button class="btn btn-verde selected" data-pago="efectivo">💵 Efectivo</button>
+    <button class="btn btn-azul" data-pago="debito">💳 Débito</button>
+    <button class="btn" style="background:#6A1B9A" data-pago="credito">💳 Crédito</button>
+    <button class="btn btn-amber" data-pago="transferencia">📲 Transferencia</button>
+  </div>
+</div>
+
+<div class="card">
+  <label>RUT cliente (opcional)</label><br>
+  <input id="rut_cliente" placeholder="12.345.678-9" style="max-width:220px">
+</div>
+
+<div class="card">
+  <h2>Seleccionar servicio</h2>
+  <div class="grid-servicios" id="grid_servicios">Cargando…</div>
+  <div class="row gap-top">
+    <button class="btn btn-gris" id="btn_pase">★ Registrar PASE LIBRE</button>
+  </div>
+</div>
+
+<div id="resultado"></div>
+
+<div id="modal_pase" class="modal-backdrop hidden">
+  <div class="modal">
+    <div id="pase_panel_usuario">
+      <h3>Pase libre – Buscar usuario</h3>
+      <input id="pase_buscar" placeholder="Nombre o RUT…" style="width:100%;margin-bottom:10px">
+      <div style="max-height:260px;overflow:auto">
+        <table><tbody id="pase_lista"></tbody></table>
+      </div>
+      <div class="row gap-top">
+        <button class="btn btn-gris" onclick="cerrarModalPase()">Cancelar</button>
+      </div>
+    </div>
+    <div id="pase_panel_servicio" class="hidden">
+      <h3>Pase libre – ¿Qué servicio?</h3>
+      <div class="grid-servicios" id="pase_grid_servicios"></div>
+      <div class="row gap-top">
+        <button class="btn btn-gris" onclick="cerrarModalPase()">Cancelar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let formaPago = "efectivo";
+let servicios = [];
+let usuarios = [];
+
+document.querySelectorAll("#pagos button").forEach((b) => {
+  b.addEventListener("click", () => {
+    document.querySelectorAll("#pagos button").forEach((x) => x.classList.remove("selected"));
+    b.classList.add("selected");
+    formaPago = b.dataset.pago;
+  });
+});
+
+async function cargarServicios() {
+  servicios = await api.get("/api/servicios");
+  const grid = document.getElementById("grid_servicios");
+  grid.innerHTML = "";
+  servicios.forEach((s) => {
+    const btn = document.createElement("button");
+    btn.textContent = `${s.nombre}\n${fmtMonto(s.precio)}`;
+    btn.style.whiteSpace = "pre-line";
+    btn.onclick = () => vender(s);
+    grid.appendChild(btn);
+  });
+}
+
+function mostrarResultado(html, tipo) {
+  document.getElementById("resultado").innerHTML = `<div class="banner ${tipo}">${html}</div>`;
+}
+
+async function vender(servicio) {
+  try {
+    const venta = await api.post("/api/ventas", {
+      servicio_id: servicio.id,
+      forma_pago: formaPago,
+      rut_cliente: document.getElementById("rut_cliente").value.trim() || null,
+    });
+    if (venta.detalle_kame) alert(venta.detalle_kame);
+    const kame = venta.estado_kame === "ok" ? `Boleta KAME: ${venta.folio_kame}`
+      : venta.estado_kame === "mock" ? `Boleta (modo prueba): ${venta.folio_kame}`
+      : venta.estado_kame === "error" ? "Error KAME: revisa el aviso" : "Sin boleta KAME";
+    const impresion = venta.impreso_termica ? "Ticket enviado a impresora térmica."
+      : `Ticket generado en PDF (${venta.detalle_impresion}).`;
+    mostrarResultado(
+      `✅ ${venta.servicio_nombre} · ${fmtMonto(venta.monto)} · Ticket ${venta.ticket}<br>` +
+      `${kame} · ${impresion} ` +
+      `<a href="/api/ventas/${venta.ticket}/pdf" target="_blank">Ver PDF</a>`,
+      "ok"
+    );
+    refrescarStatusbar();
+  } catch (e) {
+    mostrarResultado(e.message, "error");
+  }
+}
+
+async function abrirModalPase() {
+  usuarios = await api.get("/api/usuarios");
+  renderPases(usuarios);
+  mostrarPanelPase("usuario");
+  document.getElementById("modal_pase").classList.remove("hidden");
+}
+function cerrarModalPase() {
+  document.getElementById("modal_pase").classList.add("hidden");
+}
+function mostrarPanelPase(panel) {
+  document.getElementById("pase_panel_usuario").classList.toggle("hidden", panel !== "usuario");
+  document.getElementById("pase_panel_servicio").classList.toggle("hidden", panel !== "servicio");
+}
+function renderPases(lista) {
+  const tbody = document.getElementById("pase_lista");
+  tbody.innerHTML = "";
+  lista.forEach((u) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${u.nombre}</td><td>${u.rut || ""}</td>
+      <td><button class="btn btn-azul" style="padding:6px 10px;min-height:auto">Elegir</button></td>`;
+    tr.querySelector("button").onclick = () => elegirServicioPase(u);
+    tbody.appendChild(tr);
+  });
+}
+document.getElementById("pase_buscar").addEventListener("input", (e) => {
+  const t = e.target.value.toLowerCase();
+  renderPases(usuarios.filter((u) =>
+    u.nombre.toLowerCase().includes(t) || (u.rut || "").toLowerCase().includes(t)));
+});
+
+function elegirServicioPase(usuario) {
+  if (servicios.length === 1) {
+    confirmarPaseLibre(usuario, servicios[0]);
+    return;
+  }
+  const grid = document.getElementById("pase_grid_servicios");
+  grid.innerHTML = "";
+  servicios.forEach((s) => {
+    const btn = document.createElement("button");
+    btn.textContent = s.nombre;
+    btn.onclick = () => confirmarPaseLibre(usuario, s);
+    grid.appendChild(btn);
+  });
+  mostrarPanelPase("servicio");
+}
+
+async function confirmarPaseLibre(usuario, servicio) {
+  cerrarModalPase();
+  try {
+    const check = await api.get(`/api/usuarios/${usuario.id}/pases/check`);
+    if (!check.disponible) {
+      mostrarResultado(`${usuario.nombre} ya usó ${check.usados} pase(s) libre(s) hoy (límite: ${check.maximo}).`, "error");
+      return;
+    }
+    const venta = await api.post("/api/ventas", {
+      servicio_id: servicio.id, forma_pago: "efectivo",
+      usuario_id: usuario.id, es_pase_libre: true,
+    });
+    mostrarResultado(`✅ PASE LIBRE registrado · Ticket ${venta.ticket} · ${venta.servicio_nombre}`, "info");
+    refrescarStatusbar();
+  } catch (e) {
+    mostrarResultado(e.message, "error");
+  }
+}
+
+document.getElementById("btn_pase").addEventListener("click", abrirModalPase);
+cargarServicios();
+</script>
+{% endblock %}

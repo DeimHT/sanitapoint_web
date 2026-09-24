@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}Configuración – SanitaPoint{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h3>Empresa</h3>
+  <div class="row"><div style="flex:1"><label>Nombre</label><input id="empresa_nombre"></div></div>
+  <div class="row gap-top"><div style="flex:1"><label>RUT</label><input id="empresa_rut"></div></div>
+  <div class="row gap-top"><div style="flex:1"><label>Dirección</label><input id="empresa_direccion"></div></div>
+  <div class="row gap-top"><div style="flex:1"><label>Teléfono</label><input id="empresa_telefono"></div></div>
+</div>
+
+<div class="card">
+  <h3>Integración KAME</h3>
+  <p style="color:var(--gris);font-size:12px">
+    La integración KAME se configura exclusivamente en el archivo <code>.env</code> del servidor.
+    La prueba valida las credenciales OAuth sin emitir una boleta.
+  </p>
+  <button class="btn btn-verde" id="btn_probar_kame" type="button">🔌 Probar conexión a KAME</button>
+  <div id="resultado_kame"></div>
+</div>
+
+<div class="card">
+  <h3>Ticket e impresora térmica</h3>
+  <div class="row"><div style="flex:1"><label>Pie del ticket</label><input id="ticket_pie"></div></div>
+  <div class="row gap-top">
+    <div><label>Tipo de impresora</label><br>
+      <select id="impresora_tipo">
+        <option value="ninguna">Ninguna (solo PDF)</option>
+        <option value="red">Red (ESC/POS)</option>
+        <option value="usb">USB (ESC/POS)</option>
+      </select>
+    </div>
+    <div><label>IP (red)</label><br><input id="impresora_ip"></div>
+    <div><label>Puerto (red)</label><br><input id="impresora_puerto"></div>
+  </div>
+</div>
+
+<div class="card">
+  <h3>Pases libres</h3>
+  <div class="row"><div><label>Pases máximos por usuario/día</label><br><input id="pases_por_dia" type="number"></div></div>
+</div>
+
+<div class="card">
+  <h3>Tarifas de servicios</h3>
+  <div id="servicios_form"></div>
+</div>
+
+<button class="btn btn-verde" id="btn_guardar">💾 Guardar configuración</button>
+<div id="resultado"></div>
+
+<script>
+const CLAVES = ["empresa_nombre","empresa_rut","empresa_direccion","empresa_telefono",
+  "ticket_pie","impresora_tipo","impresora_ip","impresora_puerto","pases_por_dia"];
+
+let servicios = [];
+
+async function cargar() {
+  const cfg = await api.get("/api/config");
+  CLAVES.forEach((k) => {
+    const el = document.getElementById(k);
+    if (el) el.value = cfg[k] || "";
+  });
+  servicios = await api.get("/api/servicios");
+  const cont = document.getElementById("servicios_form");
+  cont.innerHTML = "";
+  servicios.forEach((s) => {
+    const div = document.createElement("div");
+    div.className = "row gap-top";
+    div.innerHTML = `<div style="flex:1"><label>${s.nombre}</label>
+      <input type="number" data-servicio="${s.id}" value="${s.precio}"></div>`;
+    cont.appendChild(div);
+  });
+}
+
+document.getElementById("btn_guardar").addEventListener("click", async () => {
+  const valores = {};
+  CLAVES.forEach((k) => {
+    const el = document.getElementById(k);
+    if (el) valores[k] = el.value;
+  });
+  try {
+    await api.put("/api/config", { valores });
+    for (const input of document.querySelectorAll("[data-servicio]")) {
+      await api.put(`/api/servicios/${input.dataset.servicio}/precio`, { precio: Number(input.value) });
+    }
+    document.getElementById("resultado").innerHTML = '<div class="banner ok">Configuración guardada correctamente.</div>';
+  } catch (e) {
+    document.getElementById("resultado").innerHTML = `<div class="banner error">${e.message}</div>`;
+  }
+});
+
+document.getElementById("btn_probar_kame").addEventListener("click", async () => {
+  const btn = document.getElementById("btn_probar_kame");
+  const resultado = document.getElementById("resultado_kame");
+  btn.disabled = true;
+  btn.textContent = "Probando conexión…";
+  resultado.innerHTML = "";
+  try {
+    const res = await api.post("/api/config/kame/test", {});
+    const clase = res.ok ? "ok" : "error";
+    resultado.innerHTML = `<div class="banner ${clase}">${res.mensaje}</div>`;
+  } catch (e) {
+    resultado.innerHTML = `<div class="banner error">${e.message}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "🔌 Probar conexión a KAME";
+  }
+});
+
+cargar();
+</script>
+{% endblock %}

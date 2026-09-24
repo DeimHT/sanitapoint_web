@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block title %}Usuarios – SanitaPoint{% endblock %}
+{% block content %}
+<div class="card">
+  <div class="row">
+    <input id="buscar" placeholder="Buscar por nombre o RUT…" style="flex:1;min-width:200px">
+    <button class="btn btn-verde" id="btn_nuevo">➕ Nuevo usuario</button>
+  </div>
+</div>
+
+<div class="card">
+  <table>
+    <thead><tr><th>ID</th><th>Nombre</th><th>RUT</th><th>Teléfono</th><th>Tipo</th><th>Registro</th><th>Pases hoy</th><th></th></tr></thead>
+    <tbody id="tabla"><tr><td colspan="8">Cargando…</td></tr></tbody>
+  </table>
+</div>
+
+<div id="modal" class="modal-backdrop hidden"><div class="modal" id="modal_body"></div></div>
+
+<script>
+let usuarios = [];
+
+function cerrarModal() { document.getElementById("modal").classList.add("hidden"); }
+function abrirModal(html) {
+  document.getElementById("modal_body").innerHTML = html;
+  document.getElementById("modal").classList.remove("hidden");
+}
+
+async function cargar() {
+  usuarios = await api.get("/api/usuarios");
+  render(usuarios);
+}
+
+async function render(lista) {
+  const tbody = document.getElementById("tabla");
+  tbody.innerHTML = "";
+  for (const u of lista) {
+    const check = await api.get(`/api/usuarios/${u.id}/pases/check`);
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${u.id}</td><td>${u.nombre}</td><td>${u.rut || ""}</td>
+      <td>${u.telefono || ""}</td><td>${u.tipo}</td>
+      <td>${new Date(u.fecha_registro).toLocaleDateString("es-CL")}</td>
+      <td>${check.usados}/${check.maximo}</td>
+      <td>
+        <button class="btn btn-azul" style="padding:6px 10px;min-height:auto" data-a="editar">Editar</button>
+        <button class="btn btn-rojo" style="padding:6px 10px;min-height:auto" data-a="desactivar">Desactivar</button>
+        <button class="btn btn-gris" style="padding:6px 10px;min-height:auto" data-a="pases">Pases</button>
+      </td>`;
+    tr.querySelector('[data-a=editar]').onclick = () => formUsuario(u);
+    tr.querySelector('[data-a=desactivar]').onclick = () => desactivar(u);
+    tr.querySelector('[data-a=pases]').onclick = () => verPases(u);
+    tbody.appendChild(tr);
+  }
+}
+
+document.getElementById("buscar").addEventListener("input", (e) => {
+  const t = e.target.value.toLowerCase();
+  render(usuarios.filter((u) => u.nombre.toLowerCase().includes(t) || (u.rut || "").toLowerCase().includes(t)));
+});
+
+function formUsuario(u) {
+  abrirModal(`
+    <h3>${u ? "Editar" : "Nuevo"} usuario</h3>
+    <div class="row"><div style="flex:1"><label>Nombre *</label><input id="f_nombre" value="${u ? u.nombre : ""}"></div></div>
+    <div class="row"><div style="flex:1"><label>RUT *</label><input id="f_rut" value="${u ? (u.rut || "") : ""}"></div></div>
+    <div class="row"><div style="flex:1"><label>Teléfono</label><input id="f_tel" value="${u ? (u.telefono || "") : ""}"></div></div>
+    <div class="row"><div style="flex:1"><label>Email</label><input id="f_email" value="${u ? (u.email || "") : ""}"></div></div>
+    <div class="row"><div style="flex:1"><label>Tipo</label>
+      <select id="f_tipo">
+        <option value="cliente" ${u && u.tipo === "cliente" ? "selected" : ""}>cliente</option>
+        <option value="empleado" ${u && u.tipo === "empleado" ? "selected" : ""}>empleado</option>
+        <option value="vip" ${u && u.tipo === "vip" ? "selected" : ""}>vip</option>
+      </select></div></div>
+    <div class="row"><div style="flex:1"><label>Notas</label><input id="f_notas" value="${u ? (u.notas || "") : ""}"></div></div>
+    <div class="row gap-top">
+      <button class="btn btn-verde" id="ok">Guardar</button>
+      <button class="btn btn-gris" onclick="cerrarModal()">Cancelar</button>
+    </div>`);
+  document.getElementById("ok").onclick = async () => {
+    const body = {
+      nombre: document.getElementById("f_nombre").value.trim(),
+      rut: document.getElementById("f_rut").value.trim(),
+      telefono: document.getElementById("f_tel").value.trim(),
+      email: document.getElementById("f_email").value.trim(),
+      tipo: document.getElementById("f_tipo").value,
+      notas: document.getElementById("f_notas").value.trim(),
+    };
+    if (!body.nombre || !body.rut) { alert("Nombre y RUT son obligatorios"); return; }
+    try {
+      if (u) await api.put(`/api/usuarios/${u.id}`, body);
+      else await api.post("/api/usuarios", body);
+      cerrarModal(); cargar();
+    } catch (e) { alert(e.message); }
+  };
+}
+
+async function desactivar(u) {
+  if (!confirm(`¿Desactivar a ${u.nombre}?`)) return;
+  await api.post(`/api/usuarios/${u.id}/desactivar`);
+  cargar();
+}
+
+async function verPases(u) {
+  const pases = await api.get(`/api/usuarios/${u.id}/pases`);
+  const filas = pases.map((p) => `<tr><td>${p.fecha}</td><td>${p.hora}</td><td>${p.servicio_nombre || ""}</td><td>${p.otorgado_por}</td></tr>`).join("");
+  abrirModal(`
+    <h3>Pases de ${u.nombre}</h3>
+    <div style="max-height:300px;overflow:auto">
+      <table><thead><tr><th>Fecha</th><th>Hora</th><th>Servicio</th><th>Otorgado por</th></tr></thead>
+      <tbody>${filas || '<tr><td colspan="4">Sin pases</td></tr>'}</tbody></table>
+    </div>
+    <div class="row gap-top"><button class="btn btn-gris" onclick="cerrarModal()">Cerrar</button></div>`);
+}
+
+document.getElementById("btn_nuevo").addEventListener("click", () => formUsuario(null));
+cargar();
+</script>
+{% endblock %}

@@ -1,0 +1,38 @@
+from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy.orm import Session
+
+from app.database import get_db
+from app.deps import get_current_cuenta
+from app.models import Cuenta
+from app.permissions import caps_de
+from app.schemas import LoginIn, MeOut
+from app.security import verify_password
+
+router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+
+def _me(cuenta: Cuenta) -> MeOut:
+    return MeOut(
+        id=cuenta.id, username=cuenta.username, nombre=cuenta.nombre,
+        rol=cuenta.rol, caps=sorted(caps_de(cuenta.rol)),
+    )
+
+
+@router.post("/login", response_model=MeOut)
+def login(body: LoginIn, request: Request, db: Session = Depends(get_db)):
+    cuenta = db.query(Cuenta).filter(Cuenta.username == body.username).first()
+    if not cuenta or not cuenta.activo or not verify_password(body.password, cuenta.password_hash):
+        raise HTTPException(401, "Usuario o contraseña incorrectos")
+    request.session["uid"] = cuenta.id
+    return _me(cuenta)
+
+
+@router.post("/logout")
+def logout(request: Request):
+    request.session.clear()
+    return {"ok": True}
+
+
+@router.get("/me", response_model=MeOut)
+def me(cuenta: Cuenta = Depends(get_current_cuenta)):
+    return _me(cuenta)

@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}Cuentas – SanitaPoint{% endblock %}
+{% block content %}
+<div class="card">
+  <div class="row">
+    <h2 style="margin:0;flex:1">Cuentas de acceso</h2>
+    <button class="btn btn-verde" id="btn_nueva">➕ Nueva cuenta</button>
+  </div>
+  <ul style="color:var(--gris);font-size:13px;margin-top:10px">
+    <li><b>Cajero</b>: emite boletas, abre caja (Nro de torniquete) y cierra su turno.</li>
+    <li><b>Supervisor</b>: retiros de caja.</li>
+    <li><b>Contabilidad</b>: informes de ventas, cierres y administración de cuentas/claves.</li>
+    <li><b>Administrador</b>: acceso completo, incluidas las configuraciones.</li>
+  </ul>
+</div>
+
+<div class="card">
+  <table>
+    <thead><tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Estado</th><th></th></tr></thead>
+    <tbody id="tabla"><tr><td colspan="5">Cargando…</td></tr></tbody>
+  </table>
+</div>
+
+<div id="modal" class="modal-backdrop hidden"><div class="modal" id="modal_body"></div></div>
+
+<script>
+let cuentas = [];
+
+function cerrarModal() { document.getElementById("modal").classList.add("hidden"); }
+function abrirModal(html) {
+  document.getElementById("modal_body").innerHTML = html;
+  document.getElementById("modal").classList.remove("hidden");
+}
+
+async function cargar() {
+  cuentas = await api.get("/api/cuentas");
+  const tbody = document.getElementById("tabla");
+  tbody.innerHTML = "";
+  if (!cuentas.length) { tbody.innerHTML = '<tr><td colspan="5">Sin cuentas</td></tr>'; return; }
+  cuentas.forEach((c) => {
+    const rol = ROL_LABEL[c.rol] || c.rol;
+    const estado = c.activo ? "Activa" : "Inactiva";
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${c.username}</td><td>${c.nombre || ""}</td><td>${rol}</td>
+      <td>${estado}</td>
+      <td>
+        <button class="btn btn-azul" style="padding:6px 10px;min-height:auto" data-a="editar">Editar</button>
+        ${c.activo ? '<button class="btn btn-rojo" style="padding:6px 10px;min-height:auto" data-a="desactivar">Desactivar</button>' : ''}
+      </td>`;
+    tr.querySelector('[data-a=editar]').onclick = () => formCuenta(c);
+    const bd = tr.querySelector('[data-a=desactivar]');
+    if (bd) bd.onclick = () => desactivar(c);
+    tbody.appendChild(tr);
+  });
+}
+
+const ROL_LABEL = {
+  cajero: "Cajero", supervisor: "Supervisor",
+  contabilidad: "Contabilidad", administrador: "Administrador",
+};
+
+function selectRol(valor) {
+  const opts = Object.entries(ROL_LABEL).map(([v, l]) =>
+    `<option value="${v}" ${valor === v ? "selected" : ""}>${l}</option>`).join("");
+  return `<select id="f_rol">${opts}</select>`;
+}
+
+function formCuenta(c) {
+  const editando = !!c;
+  abrirModal(`
+    <h3>${editando ? "Editar" : "Nueva"} cuenta</h3>
+    <div class="row"><div style="flex:1"><label>Usuario *</label>
+      <input id="f_username" value="${editando ? c.username : ""}" ${editando ? "disabled" : ""}></div></div>
+    <div class="row"><div style="flex:1"><label>Nombre</label>
+      <input id="f_nombre" value="${editando ? (c.nombre || "") : ""}"></div></div>
+    <div class="row"><div style="flex:1"><label>Rol</label>${selectRol(editando ? c.rol : "cajero")}</div></div>
+    <div class="row"><div style="flex:1"><label>${editando ? "Nueva contraseña (dejar en blanco para no cambiar)" : "Contraseña *"}</label>
+      <input id="f_password" type="password"></div></div>
+    ${editando ? `<div class="row"><div style="flex:1"><label>Estado</label>
+      <select id="f_activo"><option value="1" ${c.activo ? "selected" : ""}>Activa</option>
+      <option value="0" ${!c.activo ? "selected" : ""}>Inactiva</option></select></div></div>` : ""}
+    <div class="row gap-top">
+      <button class="btn btn-verde" id="ok">Guardar</button>
+      <button class="btn btn-gris" onclick="cerrarModal()">Cancelar</button>
+    </div>`);
+
+  document.getElementById("ok").onclick = async () => {
+    const nombre = document.getElementById("f_nombre").value.trim();
+    const rol = document.getElementById("f_rol").value;
+    const password = document.getElementById("f_password").value;
+    try {
+      if (editando) {
+        await api.put(`/api/cuentas/${c.id}`, {
+          nombre, rol,
+          activo: document.getElementById("f_activo").value === "1",
+          password: password || null,
+        });
+      } else {
+        const username = document.getElementById("f_username").value.trim();
+        if (!username || !password) { alert("Usuario y contraseña son obligatorios."); return; }
+        await api.post("/api/cuentas", { username, password, nombre, rol });
+      }
+      cerrarModal(); cargar();
+    } catch (e) { alert(e.message); }
+  };
+}
+
+async function desactivar(c) {
+  if (!confirm(`¿Desactivar la cuenta "${c.username}"?`)) return;
+  try { await api.post(`/api/cuentas/${c.id}/desactivar`); cargar(); }
+  catch (e) { alert(e.message); }
+}
+
+document.getElementById("btn_nueva").addEventListener("click", () => formCuenta(null));
+cargar();
+</script>
+{% endblock %}

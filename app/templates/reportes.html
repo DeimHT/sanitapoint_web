@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Reportes – SanitaPoint{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h2>Reporte de ventas (día / rango / servicio)</h2>
+  <p style="color:var(--gris);font-size:12px">
+    Para un reporte de un solo día, deja "Desde" y "Hasta" con la misma fecha. Deja los campos vacíos
+    para incluir todas las fechas. El filtro de servicio es opcional y combinable.
+  </p>
+  <div class="row">
+    <div><label>Desde</label><br><input id="v_desde" type="date"></div>
+    <div><label>Hasta</label><br><input id="v_hasta" type="date"></div>
+    <div><label>Servicio</label><br><select id="v_servicio"><option value="">Todos</option></select></div>
+  </div>
+  <div class="row gap-top">
+    <button class="btn btn-rojo" id="v_pdf">📄 Descargar PDF</button>
+    <button class="btn btn-verde" id="v_xlsx">📊 Descargar Excel</button>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Reporte anual</h2>
+  <p style="color:var(--gris);font-size:12px">Resumen de ventas por mes y por servicio para el año seleccionado.</p>
+  <div class="row">
+    <div><label>Año</label><br><input id="a_anio" type="number" min="2000" max="2100"></div>
+  </div>
+  <div class="row gap-top">
+    <button class="btn btn-rojo" id="a_pdf">📄 Descargar PDF</button>
+    <button class="btn btn-verde" id="a_xlsx">📊 Descargar Excel</button>
+  </div>
+</div>
+
+<script>
+document.getElementById("a_anio").value = new Date().getFullYear();
+
+async function cargarServicios() {
+  const servicios = await api.get("/api/servicios");
+  const sel = document.getElementById("v_servicio");
+  servicios.forEach((s) => {
+    const opt = document.createElement("option");
+    opt.value = s.id; opt.textContent = s.nombre;
+    sel.appendChild(opt);
+  });
+}
+
+function descargarVentas(formato) {
+  const params = new URLSearchParams();
+  const desde = document.getElementById("v_desde").value;
+  const hasta = document.getElementById("v_hasta").value;
+  const servicio = document.getElementById("v_servicio").value;
+  if (desde) params.set("desde", desde);
+  if (hasta) params.set("hasta", hasta);
+  if (servicio) params.set("servicio_id", servicio);
+  params.set("formato", formato);
+  window.location = "/api/reportes/ventas?" + params.toString();
+}
+
+function descargarAnual(formato) {
+  const params = new URLSearchParams();
+  params.set("anio", document.getElementById("a_anio").value);
+  params.set("formato", formato);
+  window.location = "/api/reportes/anual?" + params.toString();
+}
+
+document.getElementById("v_pdf").addEventListener("click", () => descargarVentas("pdf"));
+document.getElementById("v_xlsx").addEventListener("click", () => descargarVentas("xlsx"));
+document.getElementById("a_pdf").addEventListener("click", () => descargarAnual("pdf"));
+document.getElementById("a_xlsx").addEventListener("click", () => descargarAnual("xlsx"));
+
+cargarServicios();
+</script>
+{% endblock %}

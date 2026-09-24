@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+{% block title %}Caja – SanitaPoint{% endblock %}
+{% block content %}
+<div class="card">
+  <h2 id="estado_caja">Cargando…</h2>
+  <div class="row">
+    <button class="btn btn-verde" id="btn_abrir">🔓 Abrir caja</button>
+    <button class="btn btn-rojo" id="btn_cerrar">🔒 Cerrar caja</button>
+    <button class="btn btn-amber" id="btn_retiro">💸 Retiro</button>
+  </div>
+</div>
+
+<div class="card">
+  <h3>Resumen de hoy</h3>
+  <div id="resumen_hoy">—</div>
+</div>
+
+<div class="card">
+  <h3>Movimientos del turno</h3>
+  <table>
+    <thead><tr><th>Tipo</th><th>Monto</th><th>Descripción</th><th>Fecha/hora</th></tr></thead>
+    <tbody id="tabla_movs"><tr><td colspan="4">Sin caja abierta</td></tr></tbody>
+  </table>
+</div>
+
+<div id="modal" class="modal-backdrop hidden">
+  <div class="modal" id="modal_body"></div>
+</div>
+
+<script>
+let cajaActual = null;
+
+function cerrarModal() { document.getElementById("modal").classList.add("hidden"); }
+function abrirModal(html) {
+  document.getElementById("modal_body").innerHTML = html;
+  document.getElementById("modal").classList.remove("hidden");
+}
+
+async function cargarEstado() {
+  cajaActual = await api.get("/api/caja");
+  const est = document.getElementById("estado_caja");
+  const btnAbrir = document.getElementById("btn_abrir");
+  const btnCerrar = document.getElementById("btn_cerrar");
+  const btnRetiro = document.getElementById("btn_retiro");
+  if (cajaActual) {
+    const nroAp = (cajaActual.nro_apertura ?? "—");
+    est.innerHTML = `🟢 Caja abierta &nbsp; | &nbsp; Operador: ${cajaActual.operador} &nbsp; | &nbsp; Apertura: ${new Date(cajaActual.fecha_apertura).toLocaleString("es-CL")} &nbsp; | &nbsp; Nro de aperturas: ${nroAp}`;
+    btnAbrir.disabled = true; btnCerrar.disabled = false; btnRetiro.disabled = false;
+    cargarMovimientos(cajaActual.id);
+  } else {
+    est.innerHTML = "🔴 Caja cerrada";
+    btnAbrir.disabled = false; btnCerrar.disabled = true; btnRetiro.disabled = true;
+    document.getElementById("tabla_movs").innerHTML = '<tr><td colspan="4">Sin caja abierta</td></tr>';
+  }
+  const r = await api.get("/api/caja/resumen/hoy");
+  document.getElementById("resumen_hoy").innerHTML =
+    `Ventas: ${r.total_transacciones} &nbsp;|&nbsp; Total: ${fmtMonto(r.total_monto)} ` +
+    `&nbsp;|&nbsp; Efectivo: ${fmtMonto(r.efectivo)} &nbsp;|&nbsp; Débito: ${fmtMonto(r.debito)} ` +
+    `&nbsp;|&nbsp; Crédito: ${fmtMonto(r.credito)} &nbsp;|&nbsp; Transferencia: ${fmtMonto(r.transferencia)} ` +
+    `&nbsp;|&nbsp; Pases gratis: ${r.pases_gratis}`;
+  aplicarPermisos();
+}
+
+function aplicarPermisos() {
+  // Oculta las acciones que el rol no puede realizar (además del estado de caja).
+  if (typeof puede !== "function" || !cuentaActual) return;
+  document.getElementById("btn_abrir").hidden = !puede("caja_apertura");
+  document.getElementById("btn_cerrar").hidden = !puede("caja_cierre");
+  document.getElementById("btn_retiro").hidden = !puede("caja_retiro");
+}
+document.addEventListener("cuenta-lista", aplicarPermisos);
+
+async function cargarMovimientos(cajaId) {
+  const movs = await api.get(`/api/caja/${cajaId}/movimientos`);
+  const tbody = document.getElementById("tabla_movs");
+  tbody.innerHTML = "";
+  if (!movs.length) { tbody.innerHTML = '<tr><td colspan="4">Sin movimientos</td></tr>'; return; }
+  movs.forEach((m) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${m.tipo}</td><td>${fmtMonto(m.monto)}</td><td>${m.descripcion || ""}</td>
+      <td>${new Date(m.creado_en).toLocaleString("es-CL")}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+document.getElementById("btn_abrir").onclick = async () => {
+  // El Nro de aperturas se sugiere con el del último cierre, pero es editable.
+  let sugerido = 0;
+  try { sugerido = (await api.get("/api/caja/sugerencia-apertura")).nro_apertura_sugerido ?? 0; } catch (e) {}
+  abrirModal(`
+    <h3>Abrir caja</h3>
+    <div class="row"><div style="flex:1"><label>Operador</label><input id="in_operador"></div></div>
+    <div class="row"><div style="flex:1"><label>Saldo inicial</label><input id="in_saldo" type="number" value="0"></div></div>
+    <div class="row"><div style="flex:1"><label>Nro de aperturas</label>
+      <input id="in_nro_apertura" type="number" value="${sugerido}">
+      <div style="font-size:12px;color:var(--gris);margin-top:4px">Sugerido del último cierre: ${sugerido} (puedes modificarlo)</div>
+    </div></div>
+    <div class="row gap-top">
+      <button class="btn btn-verde" id="ok">Abrir</button>
+      <button class="btn btn-gris" onclick="cerrarModal()">Cancelar</button>
+    </div>`);
+  document.getElementById("ok").onclick = async () => {
+    try {
+      await api.post("/api/caja/abrir", {
+        operador: document.getElementById("in_operador").value.trim() || "Operador",
+        saldo_inicial: Number(document.getElementById("in_saldo").value || 0),
+        nro_apertura: Number(document.getElementById("in_nro_apertura").value || 0),
+      });
+      cerrarModal(); cargarEstado(); refrescarStatusbar();
+    } catch (e) { alert(e.message); }
+  };
+};
+
+document.getElementById("btn_cerrar").onclick = () => {
+  const nroAp = cajaActual && cajaActual.nro_apertura != null ? cajaActual.nro_apertura : null;
+  const refTxt = nroAp != null
+    ? `Debe ser mayor o igual al de apertura del día: ${nroAp}`
+    : "Ingresa el número del contador de aperturas de caja";
+  abrirModal(`
+    <h3>Cerrar caja</h3>
+    <div class="row"><div style="flex:1"><label>Conteo físico en caja</label><input id="in_saldo" type="number" value="0"></div></div>
+    <div class="row"><div style="flex:1"><label>Nro de aperturas *</label>
+      <input id="in_nro_cierre" type="number" ${nroAp != null ? `min="${nroAp}"` : ""} placeholder="Obligatorio">
+      <div style="font-size:12px;color:var(--gris);margin-top:4px">${refTxt}</div>
+    </div></div>
+    <div class="row gap-top">
+      <button class="btn btn-rojo" id="ok">Cerrar</button>
+      <button class="btn btn-gris" onclick="cerrarModal()">Cancelar</button>
+    </div>`);
+  document.getElementById("ok").onclick = async () => {
+    const rawNro = document.getElementById("in_nro_cierre").value.trim();
+    if (rawNro === "") { alert("El Nro de aperturas es obligatorio al cerrar la caja."); return; }
+    const nroCierre = Number(rawNro);
+    if (!Number.isInteger(nroCierre) || nroCierre < 0) { alert("El Nro de aperturas debe ser un número válido."); return; }
+    if (nroAp != null && nroCierre < nroAp) {
+      alert(`El Nro de aperturas al cierre (${nroCierre}) no puede ser menor que el de apertura del día (${nroAp}).`);
+      return;
+    }
+    try {
+      await api.post("/api/caja/cerrar", {
+        saldo_final: Number(document.getElementById("in_saldo").value || 0),
+        nro_cierre: nroCierre,
+      });
+      cerrarModal(); cargarEstado(); refrescarStatusbar();
+    } catch (e) { alert(e.message); }
+  };
+};
+
+document.getElementById("btn_retiro").onclick = () => {
+  abrirModal(`
+    <h3>Retiro de caja</h3>
+    <div class="row"><div style="flex:1"><label>Monto</label><input id="in_monto" type="number" value="0"></div></div>
+    <div class="row"><div style="flex:1"><label>Motivo</label><input id="in_desc"></div></div>
+    <div class="row gap-top">
+      <button class="btn btn-amber" id="ok">Retirar</button>
+      <button class="btn btn-gris" onclick="cerrarModal()">Cancelar</button>
+    </div>`);
+  document.getElementById("ok").onclick = async () => {
+    try {
+      await api.post("/api/caja/movimiento", {
+        tipo: "retiro",
+        monto: Number(document.getElementById("in_monto").value || 0),
+        descripcion: document.getElementById("in_desc").value.trim() || "Retiro",
+      });
+      cerrarModal(); cargarEstado();
+    } catch (e) { alert(e.message); }
+  };
+};
+
+cargarEstado();
+</script>
+{% endblock %}

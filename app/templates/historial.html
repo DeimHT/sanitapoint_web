@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Historial – SanitaPoint{% endblock %}
+{% block content %}
+<div class="card">
+  <h2>Historial de ventas</h2>
+  <div class="row">
+    <div><label>Desde</label><br><input id="f_desde" type="date"></div>
+    <div><label>Hasta</label><br><input id="f_hasta" type="date"></div>
+    <div><label>Servicio</label><br><select id="f_servicio"><option value="">Todos</option></select></div>
+    <div style="align-self:flex-end"><button class="btn btn-azul" id="btn_buscar">🔍 Buscar</button></div>
+  </div>
+</div>
+
+<div class="card">
+  <table>
+    <thead>
+      <tr><th>Ticket</th><th>Fecha</th><th>Servicio</th><th>Monto</th><th>Pago</th><th>RUT</th><th>Boleta</th><th>Pase</th><th></th></tr>
+    </thead>
+    <tbody id="tabla"><tr><td colspan="9">Cargando…</td></tr></tbody>
+  </table>
+</div>
+
+<script>
+async function cargarServiciosFiltro() {
+  const servicios = await api.get("/api/servicios");
+  const sel = document.getElementById("f_servicio");
+  servicios.forEach((s) => {
+    const opt = document.createElement("option");
+    opt.value = s.id; opt.textContent = s.nombre;
+    sel.appendChild(opt);
+  });
+}
+
+async function buscar() {
+  const params = new URLSearchParams();
+  const desde = document.getElementById("f_desde").value;
+  const hasta = document.getElementById("f_hasta").value;
+  const servicio = document.getElementById("f_servicio").value;
+  if (desde) params.set("desde", desde);
+  if (hasta) params.set("hasta", hasta);
+  if (servicio) params.set("servicio_id", servicio);
+
+  const ventas = await api.get("/api/ventas?" + params.toString());
+  const tbody = document.getElementById("tabla");
+  tbody.innerHTML = "";
+  if (!ventas.length) { tbody.innerHTML = '<tr><td colspan="9">Sin resultados</td></tr>'; return; }
+  ventas.slice().reverse().forEach((v) => {
+    const boleta = v.estado_kame === "ok" ? v.folio_kame
+      : v.estado_kame === "mock" ? `${v.folio_kame} (prueba)` : "-";
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${v.ticket}</td><td>${new Date(v.creado_en).toLocaleString("es-CL")}</td>
+      <td>${v.servicio_nombre}</td><td>${fmtMonto(v.monto)}</td><td>${v.forma_pago}</td>
+      <td>${v.rut_cliente || ""}</td><td>${boleta}</td><td>${v.es_pase_libre ? "✅" : ""}</td>
+      <td><a href="/api/ventas/${v.ticket}/pdf" target="_blank">PDF</a></td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+document.getElementById("btn_buscar").addEventListener("click", buscar);
+cargarServiciosFiltro().then(buscar);
+</script>
+{% endblock %}

@@ -1,0 +1,201 @@
+:root {
+  --azul: #1565C0;
+  --azul-dark: #0D47A1;
+  --verde: #2E7D32;
+  --verde-dark: #1B5E20;
+  --rojo: #C62828;
+  --amber: #E65100;
+  --gris: #546E7A;
+  --bg: #F4F6F8;
+  --card: #FFFFFF;
+  --texto: #263238;
+}
+
+* { box-sizing: border-box; }
+
+/* El atributo hidden debe ocultar SIEMPRE, incluso en .btn (display:inline-block). */
+[hidden] { display: none !important; }
+
+body {
+  margin: 0;
+  font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--texto);
+}
+
+header.topnav {
+  background: var(--azul-dark);
+  color: white;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  height: 56px;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+header.topnav .brand {
+  font-weight: 700;
+  font-size: 18px;
+  margin-right: 24px;
+}
+
+header.topnav a {
+  color: #E3F2FD;
+  text-decoration: none;
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+header.topnav a.active, header.topnav a:hover {
+  background: rgba(255,255,255,0.15);
+  color: white;
+}
+
+header.topnav .nav-spacer { flex: 1; }
+
+header.topnav .nav-user {
+  color: #E3F2FD;
+  font-size: 13px;
+  font-weight: 600;
+  margin-right: 10px;
+  white-space: nowrap;
+}
+
+header.topnav .nav-logout {
+  min-height: 32px;
+  padding: 6px 12px;
+  font-size: 13px;
+}
+
+#statusbar {
+  background: #263238;
+  color: #CFD8DC;
+  font-size: 12px;
+  padding: 6px 16px;
+}
+
+main {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 20px 16px 60px;
+}
+
+.card {
+  background: var(--card);
+  border-radius: 10px;
+  padding: 18px;
+  margin-bottom: 18px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+
+.card h2, .card h3 { margin-top: 0; }
+
+.btn {
+  display: inline-block;
+  border: none;
+  border-radius: 8px;
+  padding: 12px 18px;
+  font-size: 14px;
+  font-weight: 700;
+  color: white;
+  cursor: pointer;
+  min-height: 44px;
+}
+
+.btn:disabled { background: #B0BEC5 !important; color: #78909C !important; cursor: not-allowed; }
+
+.btn-azul { background: var(--azul); }
+.btn-azul:hover { background: var(--azul-dark); }
+.btn-verde { background: var(--verde); }
+.btn-verde:hover { background: var(--verde-dark); }
+.btn-rojo { background: var(--rojo); }
+.btn-amber { background: var(--amber); }
+.btn-gris { background: var(--gris); }
+
+.btn.selected {
+  outline: 3px solid white;
+  box-shadow: 0 0 0 3px currentColor;
+}
+
+.grid-servicios {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.grid-servicios button {
+  min-height: 90px;
+  font-size: 16px;
+  border-radius: 10px;
+  border: none;
+  background: var(--azul-dark);
+  color: white;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.row.gap-top { margin-top: 14px; }
+
+label { font-size: 13px; font-weight: 600; color: var(--gris); }
+
+input, select {
+  padding: 8px 10px;
+  border: 1px solid #CFD8DC;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+th, td {
+  padding: 8px 10px;
+  border-bottom: 1px solid #ECEFF1;
+  text-align: left;
+}
+
+th { background: #ECEFF1; font-weight: 700; }
+
+.banner {
+  padding: 14px;
+  border-radius: 8px;
+  font-weight: 600;
+  margin-top: 12px;
+}
+
+.banner.ok { background: #E8F5E9; color: var(--verde-dark); }
+.banner.info { background: #E3F2FD; color: var(--azul-dark); }
+.banner.error { background: #FFEBEE; color: var(--rojo); }
+
+.pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.pill.abierta { background: #E8F5E9; color: var(--verde-dark); }
+.pill.cerrada { background: #FFEBEE; color: var(--rojo); }
+
+.modal-backdrop {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+  display: flex; align-items: center; justify-content: center; z-index: 50;
+}
+
+.modal {
+  background: white; border-radius: 10px; padding: 20px;
+  width: 92%; max-width: 420px;
+}
+
+.modal .row { margin-bottom: 10px; }
+.modal label { display: block; margin-bottom: 4px; }
+.modal input, .modal select { width: 100%; }
+.hidden { display: none !important; }
