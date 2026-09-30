@@ -306,7 +306,7 @@ class KameAPI:
 def emitir_boleta(db, servicio_nombre, monto_total, forma_pago, rut_cliente=None, ticket_num=""):
     """Mantiene el contrato del POS; solo simula en modo mock explícito."""
     client = KameAPI(db)
-    modo = client._config('KAME_MODO', 'mock')
+    modo = client._config('KAME_MODO', 'real').strip().lower()
     if modo == 'mock':
         return f"MOCK-{uuid4().hex[:12].upper()}", 'mock'
     if modo != 'real':

@@ -48,6 +48,20 @@ class KameTests(unittest.TestCase):
         post.assert_not_called()
 
     @patch('app.services.kame_client.requests.post')
+    def test_default_mode_issues_through_kame(self, post):
+        self.configure(client_id='client', client_secret='secret', user='cashier@example.com')
+        post.side_effect = [response({'access_token': 'token', 'expires_in': 3600}),
+                            response({'Estado': 'OK', 'Folio': 456})]
+        self.assertEqual(self.emit(), ('456', 'ok'))
+        self.assertEqual(post.call_count, 2)
+        self.assertTrue(post.call_args.args[0].endswith('/api/Documento/addVenta'))
+
+    @patch('app.services.kame_client.requests.post')
+    def test_default_without_credentials_never_simulates(self, post):
+        self.assertEqual(self.emit()[1], 'error')
+        post.assert_not_called()
+
+    @patch('app.services.kame_client.requests.post')
     def test_real_missing_credentials_never_simulates(self, post):
         self.configure(modo='real')
         self.assertEqual(self.emit()[1], 'error')

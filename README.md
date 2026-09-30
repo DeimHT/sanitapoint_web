@@ -81,7 +81,8 @@ La integración se configura exclusivamente con variables `KAME_*` en `.env`
 entra a Configuración y pulsa **Probar conexión a KAME**. La prueba requiere
 `KAME_CLIENT_ID` y `KAME_CLIENT_SECRET`; un token Bearer fijo no se marca como
 válido sin hacer una operación real contra la API.
-El modo **mock** genera folios de prueba sin conexión. En modo real, las
+La emisión usa **real** por defecto; configura `KAME_MODO=real` en `.env`.
+El modo **mock**, solo si se activa explícitamente, genera folios de prueba sin conexión. En modo real, las
 credenciales ausentes o los rechazos generan un error, nunca una simulación.
 La venta queda registrada aunque KAME falle y caja recibe el aviso. Ante una
 respuesta incierta, verifica en KAME antes de repetir la venta para evitar duplicados.
