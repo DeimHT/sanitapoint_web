@@ -21,6 +21,7 @@ coverage.xml
 build/
 dist/
 *.egg-info/
+/artifacts/
 
 # Variables locales y credenciales
 .env
