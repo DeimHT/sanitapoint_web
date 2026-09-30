@@ -5,16 +5,17 @@ from app.database import get_db
 from app.deps import get_current_cuenta
 from app.models import Cuenta
 from app.permissions import caps_de
-from app.schemas import LoginIn, MeOut
+from app.schemas import LoginIn, MeOut, ServicioLogin
 from app.security import verify_password
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
-def _me(cuenta: Cuenta) -> MeOut:
+def _me(cuenta: Cuenta, servicio: ServicioLogin | None = None) -> MeOut:
     return MeOut(
         id=cuenta.id, username=cuenta.username, nombre=cuenta.nombre,
         rol=cuenta.rol, caps=sorted(caps_de(cuenta.rol)),
+        servicio=servicio,
     )
 
 
@@ -24,7 +25,8 @@ def login(body: LoginIn, request: Request, db: Session = Depends(get_db)):
     if not cuenta or not cuenta.activo or not verify_password(body.password, cuenta.password_hash):
         raise HTTPException(401, "Usuario o contraseña incorrectos")
     request.session["uid"] = cuenta.id
-    return _me(cuenta)
+    request.session["servicio"] = body.servicio
+    return _me(cuenta, body.servicio)
 
 
 @router.post("/logout")
@@ -34,5 +36,5 @@ def logout(request: Request):
 
 
 @router.get("/me", response_model=MeOut)
-def me(cuenta: Cuenta = Depends(get_current_cuenta)):
-    return _me(cuenta)
+def me(request: Request, cuenta: Cuenta = Depends(get_current_cuenta)):
+    return _me(cuenta, request.session.get("servicio"))

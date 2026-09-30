@@ -2,18 +2,12 @@
 {% block title %}Venta – SanitaPoint{% endblock %}
 {% block content %}
 <div class="card">
-  <h2>Forma de pago</h2>
-  <div class="row" id="pagos">
-    <button class="btn btn-verde selected" data-pago="efectivo">💵 Efectivo</button>
-    <button class="btn btn-azul" data-pago="debito">💳 Débito</button>
-    <button class="btn" style="background:#6A1B9A" data-pago="credito">💳 Crédito</button>
-    <button class="btn btn-amber" data-pago="transferencia">📲 Transferencia</button>
+  <h2 id="titulo_pagos">Forma de pago</h2>
+  <div class="row" id="pagos" role="group" aria-labelledby="titulo_pagos">
+    <button type="button" class="btn btn-verde selected" data-pago="efectivo" aria-pressed="true">💵 Efectivo <span class="pago-marca" aria-hidden="true">✓</span></button>
+    <button type="button" class="btn btn-amber" data-pago="transferencia" aria-pressed="false">📲 Transferencia <span class="pago-marca" aria-hidden="true">✓</span></button>
   </div>
-</div>
-
-<div class="card">
-  <label>RUT cliente (opcional)</label><br>
-  <input id="rut_cliente" placeholder="12.345.678-9" style="max-width:220px">
+  <p id="pago_seleccionado" class="pago-seleccionado" role="status">Forma de pago seleccionada: Efectivo</p>
 </div>
 
 <div class="card">
@@ -52,12 +46,17 @@
 let formaPago = "efectivo";
 let servicios = [];
 let usuarios = [];
+const nombresPago = { efectivo: "Efectivo", transferencia: "Transferencia" };
 
 document.querySelectorAll("#pagos button").forEach((b) => {
   b.addEventListener("click", () => {
-    document.querySelectorAll("#pagos button").forEach((x) => x.classList.remove("selected"));
-    b.classList.add("selected");
+    document.querySelectorAll("#pagos button").forEach((x) => {
+      const seleccionado = x === b;
+      x.classList.toggle("selected", seleccionado);
+      x.setAttribute("aria-pressed", String(seleccionado));
+    });
     formaPago = b.dataset.pago;
+    document.getElementById("pago_seleccionado").textContent = `Forma de pago seleccionada: ${nombresPago[formaPago]}`;
   });
 });
 
@@ -83,7 +82,6 @@ async function vender(servicio) {
     const venta = await api.post("/api/ventas", {
       servicio_id: servicio.id,
       forma_pago: formaPago,
-      rut_cliente: document.getElementById("rut_cliente").value.trim() || null,
     });
     if (venta.detalle_kame) alert(venta.detalle_kame);
     const kame = venta.estado_kame === "ok" ? `Boleta KAME: ${venta.folio_kame}`
@@ -134,13 +132,18 @@ document.getElementById("pase_buscar").addEventListener("input", (e) => {
 });
 
 function elegirServicioPase(usuario) {
-  if (servicios.length === 1) {
-    confirmarPaseLibre(usuario, servicios[0]);
+  const serviciosBano = servicios.filter((s) => s.nombre.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().includes("bano"));
+  if (!serviciosBano.length) {
+    alert("No hay un servicio de baño disponible para el pase libre.");
+    return;
+  }
+  if (serviciosBano.length === 1) {
+    confirmarPaseLibre(usuario, serviciosBano[0]);
     return;
   }
   const grid = document.getElementById("pase_grid_servicios");
   grid.innerHTML = "";
-  servicios.forEach((s) => {
+  serviciosBano.forEach((s) => {
     const btn = document.createElement("button");
     btn.textContent = s.nombre;
     btn.onclick = () => confirmarPaseLibre(usuario, s);

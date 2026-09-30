@@ -65,7 +65,33 @@ de caja → genera el ticket con
 
 ### 3.2 Caja
 [caja.py](app/routers/caja.py): abrir / cerrar / retiro / resumen del día. Toda
-venta queda asociada a la caja abierta en ese momento.
+venta queda asociada a la caja abierta del usuario autenticado. Dos usuarios
+pueden mantener turnos abiertos a la vez; cada uno ve sus propios contadores.
+
+- **Apertura:** Caja Inicial (dinero), Torniquete Baño Inicial y Torniquete Ducha
+  Inicial (lecturas físicas). El operador se toma de la cuenta conectada.
+- **Contadores internos:** empiezan en cero en cada turno. Una venta de baño o
+  un pase gratuito suma un acceso de baño; una venta de ducha suma uno de ducha.
+  Los pases gratuitos corresponden al baño. Los contadores se obtienen de las
+  ventas confirmadas de esa caja, por lo que no se pierden al recargar o salir.
+- **Retiros:** el supervisor selecciona explícitamente la caja del usuario.
+- **Cierre:** Caja Final, Torniquete Baño Final y Torniquete Ducha Final. Las
+  lecturas finales no pueden ser menores que las iniciales.
+- **Cuadre de efectivo:** esperado = inicial + ventas en efectivo − retiros;
+  diferencia = final − esperado. Un valor negativo es faltante, positivo es
+  sobrante. También se muestra el cambio final − inicial y el ingreso ajustado
+  final − inicial + retiros. Los pagos electrónicos no aumentan el efectivo.
+- **Cuadre de personas:** pasos = lectura final − inicial; diferencia = pasos
+  − contador interno. Baño contrasta ventas + pases; ducha contrasta ventas.
+  Las diferencias se registran y muestran sin impedir el cierre.
+
+El último cierre se muestra en Caja; Contabilidad puede consultar todos los
+turnos en Cierres y abrir **Ver cuadre** para revisar el detalle.
+
+Al reiniciar, SQLite agrega las columnas nuevas sin borrar registros. Los
+turnos anteriores se vinculan a una cuenta solo cuando el nombre del operador
+identifica una única cuenta; los nombres ambiguos requieren revisión manual.
+Las lecturas antiguas que no existen se muestran como “—”, sin inventar ceros.
 
 ### 3.3 KAME (real / mock)
 [kame_client.py](app/services/kame_client.py). Controlado por `kame_modo` en

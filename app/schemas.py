@@ -1,11 +1,16 @@
 from datetime import datetime
+from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 # ── Autenticación y cuentas de acceso ────────────────────────────────────────
 
+ServicioLogin = Literal["Baño 1", "Baño 2"]
+
+
 class LoginIn(BaseModel):
+    servicio: ServicioLogin
     username: str
     password: str
 
@@ -16,6 +21,7 @@ class MeOut(BaseModel):
     nombre: str
     rol: str
     caps: list[str] = []
+    servicio: ServicioLogin | None = None
 
 
 class CuentaOut(BaseModel):
@@ -63,31 +69,55 @@ class CajaOut(BaseModel):
     fecha_apertura: datetime
     fecha_cierre: datetime | None
     operador: str
+    cuenta_id: int | None = None
     saldo_inicial: int
     saldo_final: int | None
     estado: str
     nro_apertura: int | None = None
     nro_cierre: int | None = None
+    torniquete_bano_inicial: int | None = None
+    torniquete_ducha_inicial: int | None = None
+    torniquete_bano_final: int | None = None
+    torniquete_ducha_final: int | None = None
+    contador_bano: int = 0
+    contador_ducha: int = 0
+    ventas_bano: int = 0
+    ventas_ducha: int = 0
+    pases_bano: int = 0
+    total_ventas: int = 0
+    ventas_efectivo: int = 0
+    total_retiros: int = 0
+    n_ventas: int = 0
+    saldo_esperado: int = 0
+    cambio_dinero: int | None = None
+    ingreso_ajustado_retiros: int | None = None
+    diferencia_dinero: int | None = None
+    personas_bano: int | None = None
+    personas_ducha: int | None = None
+    diferencia_bano: int | None = None
+    diferencia_ducha: int | None = None
 
     class Config:
         from_attributes = True
 
 
 class AbrirCajaIn(BaseModel):
-    operador: str
-    saldo_inicial: int = 0
-    nro_apertura: int = 0
+    saldo_inicial: int = Field(ge=0)
+    torniquete_bano_inicial: int = Field(ge=0)
+    torniquete_ducha_inicial: int = Field(ge=0)
 
 
 class CerrarCajaIn(BaseModel):
-    saldo_final: int
-    nro_cierre: int  # obligatorio: "Nro de aperturas" al cierre
+    saldo_final: int = Field(ge=0)
+    torniquete_bano_final: int = Field(ge=0)
+    torniquete_ducha_final: int = Field(ge=0)
 
 
 class MovimientoIn(BaseModel):
     tipo: str  # ingreso | retiro
-    monto: int
+    monto: int = Field(gt=0)
     descripcion: str = ""
+    caja_id: int | None = None
 
 
 class MovimientoOut(BaseModel):
@@ -104,7 +134,7 @@ class MovimientoOut(BaseModel):
 
 class VentaIn(BaseModel):
     servicio_id: int
-    forma_pago: str
+    forma_pago: Literal["efectivo", "transferencia"]
     rut_cliente: str | None = None
     usuario_id: int | None = None
     es_pase_libre: bool = False

@@ -1,16 +1,19 @@
 import os
+from typing import get_args
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import inspect, text
+from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
 from app import models  # noqa: F401  — registra las tablas en Base.metadata
 from app import permissions as perms
 from app.config import SECRET_KEY, settings
-from app.database import Base, SessionLocal, engine
+from app.database import Base, SessionLocal, engine, get_db
+from app.schemas import ServicioLogin
 from app.routers import auth, caja, config, cuentas, reportes, servicios, usuarios, ventas
 from app.seed import run_seed
 
@@ -54,14 +57,37 @@ def _asegurar_columnas():
     """
     if not settings.database_url.startswith("sqlite"):
         return
-    nuevas = {"cajas": {"nro_apertura": "INTEGER", "nro_cierre": "INTEGER"}}
+    nuevas = {"cajas": {
+        "nro_apertura": "INTEGER", "nro_cierre": "INTEGER",
+        "torniquete_bano_inicial": "INTEGER", "torniquete_ducha_inicial": "INTEGER",
+        "cuenta_id": "INTEGER REFERENCES cuentas(id)",
+        "torniquete_bano_final": "INTEGER", "torniquete_ducha_final": "INTEGER",
+    }, "ventas": {"tipo_acceso": "VARCHAR"}}
     insp = inspect(engine)
     with engine.begin() as conn:
         for tabla, columnas in nuevas.items():
+            if not insp.has_table(tabla):
+                continue
             existentes = {c["name"] for c in insp.get_columns(tabla)}
             for col, tipo in columnas.items():
                 if col not in existentes:
                     conn.execute(text(f"ALTER TABLE {tabla} ADD COLUMN {col} {tipo}"))
+
+
+def _asignar_cajas_anteriores(db: Session):
+    """Asigna turnos antiguos solo cuando el operador identifica una única cuenta."""
+    cuentas = db.query(models.Cuenta).all()
+    for caja_anterior in db.query(models.Caja).filter(models.Caja.cuenta_id.is_(None)).all():
+        coincidencias = [c for c in cuentas if caja_anterior.operador in
+                         (c.username, c.nombre.strip() if c.nombre else "")]
+        if len(coincidencias) == 1:
+            cuenta_id = coincidencias[0].id
+            if caja_anterior.estado == "abierta" and db.query(models.Caja).filter(
+                models.Caja.cuenta_id == cuenta_id, models.Caja.estado == "abierta"
+            ).first():
+                continue
+            caja_anterior.cuenta_id = cuenta_id
+    db.commit()
 
 
 def _migrar_roles():
@@ -80,6 +106,7 @@ def on_startup():
     db = SessionLocal()
     try:
         run_seed(db)
+        _asignar_cajas_anteriores(db)
     finally:
         db.close()
 
@@ -145,9 +172,12 @@ for path, (template, caps_permitidas) in PAGES.items():
 
 
 @app.get("/login", include_in_schema=False)
-async def login_page(request: Request):
+async def login_page(request: Request, db: Session = Depends(get_db)):
     # Si ya hay sesión válida, ir directo al inicio del rol.
     cuenta = _cuenta_actual(request)
     if cuenta and cuenta.activo:
         return RedirectResponse(_home_path(cuenta), status_code=302)
-    return templates.TemplateResponse(request, "login.html", {})
+    cuentas = db.query(models.Cuenta).order_by(models.Cuenta.username).all()
+    return templates.TemplateResponse(request, "login.html", {
+        "cuentas": cuentas, "servicios": get_args(ServicioLogin),
+    })

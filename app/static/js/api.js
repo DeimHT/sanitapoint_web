@@ -50,7 +50,7 @@ async function refrescarStatusbar() {
     const caja = await api.get("/api/caja");
     const ahora = new Date().toLocaleString("es-CL");
     if (caja) {
-      el.innerHTML = `${ahora} &nbsp;|&nbsp; <span class="pill abierta">CAJA ABIERTA</span> — ${caja.operador}`;
+      el.textContent = `${ahora} | CAJA ABIERTA — ${caja.operador} | Contadores: Baño ${caja.contador_bano} · Ducha ${caja.contador_ducha}`;
     } else {
       el.innerHTML = `${ahora} &nbsp;|&nbsp; <span class="pill cerrada">CAJA CERRADA</span>`;
     }

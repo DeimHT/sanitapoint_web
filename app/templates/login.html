@@ -12,7 +12,7 @@
     .login-card h1 { margin: 0 0 4px; font-size: 22px; }
     .login-card p.sub { margin: 0 0 20px; color: var(--gris); font-size: 13px; }
     .login-card label { display: block; margin-bottom: 4px; }
-    .login-card input { width: 100%; margin-bottom: 14px; }
+    .login-card input, .login-card select { width: 100%; margin-bottom: 14px; }
     .login-card .btn { width: 100%; }
   </style>
 </head>
@@ -20,13 +20,28 @@
   <div class="login-wrap">
     <div class="login-card">
       <h1>🚿 SanitaPoint</h1>
-      <p class="sub">Ingresa con tu usuario y contraseña</p>
-      <label>Usuario</label>
-      <input id="username" autofocus autocomplete="username">
-      <label>Contraseña</label>
-      <input id="password" type="password" autocomplete="current-password">
+      <p class="sub">Selecciona servicio y usuario e ingresa tu contraseña</p>
+      <form id="login_form">
+      <label for="servicio">Servicio</label>
+      <select id="servicio" name="servicio" autofocus required>
+        <option value="" disabled selected>Selecciona un servicio</option>
+        {% for servicio in servicios %}
+        <option value="{{ servicio }}">{{ servicio }}</option>
+        {% endfor %}
+      </select>
+      <label for="username">Usuario</label>
+      <select id="username" name="username" autocomplete="username" required>
+        <option value="" disabled selected>Selecciona un usuario</option>
+        {% for cuenta in cuentas %}
+        <option value="{{ cuenta.username }}" {% if not cuenta.activo %}disabled{% endif %}>{{ cuenta.username }}{% if cuenta.nombre %} — {{ cuenta.nombre }}{% endif %}{% if not cuenta.activo %} (desactivado){% endif %}</option>
+        {% endfor %}
+      </select>
+      {% if not cuentas %}<p>No hay usuarios registrados.</p>{% endif %}
+      <label for="password">Contraseña</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required>
       <button class="btn btn-verde" id="btn_login">Ingresar</button>
-      <div id="error" class="banner error" style="margin-top:14px" hidden></div>
+      </form>
+      <div id="error" class="banner error" role="alert" style="margin-top:14px" hidden></div>
     </div>
   </div>
 
@@ -36,14 +51,15 @@
 
     async function login() {
       err.hidden = true;
+      const servicio = document.getElementById("servicio").value;
       const username = document.getElementById("username").value.trim();
       const password = document.getElementById("password").value;
-      if (!username || !password) { mostrarError("Ingresa usuario y contraseña."); return; }
+      if (!servicio || !username || !password) { mostrarError("Selecciona servicio y usuario e ingresa tu contraseña."); return; }
       try {
         const r = await fetch("/api/auth/login", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username, password }),
+          body: JSON.stringify({ servicio, username, password }),
         });
         if (!r.ok) {
           let detail = "No se pudo ingresar.";
@@ -57,12 +73,9 @@
       }
     }
 
-    document.getElementById("btn_login").addEventListener("click", login);
-    document.getElementById("password").addEventListener("keydown", (e) => {
-      if (e.key === "Enter") login();
-    });
-    document.getElementById("username").addEventListener("keydown", (e) => {
-      if (e.key === "Enter") document.getElementById("password").focus();
+    document.getElementById("login_form").addEventListener("submit", (e) => {
+      e.preventDefault();
+      login();
     });
   </script>
 </body>

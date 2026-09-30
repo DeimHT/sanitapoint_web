@@ -51,14 +51,17 @@ class Caja(Base):
     fecha_apertura = Column(DateTime, default=datetime.now)
     fecha_cierre = Column(DateTime, nullable=True)
     operador = Column(String, nullable=False)
+    cuenta_id = Column(Integer, ForeignKey("cuentas.id"), nullable=True, index=True)
     saldo_inicial = Column(Integer, default=0)
     saldo_final = Column(Integer, nullable=True)
     estado = Column(String, default="abierta", nullable=False)  # abierta | cerrada
-    # "Nro de aperturas": lectura del contador de aperturas de caja registrada al
-    # abrir (nro_apertura) y al cerrar (nro_cierre). El de cierre es obligatorio y
-    # debe ser >= al de apertura del día.
+    # Campos históricos: los turnos nuevos usan las lecturas separadas de abajo.
     nro_apertura = Column(Integer, nullable=True)
     nro_cierre = Column(Integer, nullable=True)
+    torniquete_bano_inicial = Column(Integer, nullable=True)
+    torniquete_ducha_inicial = Column(Integer, nullable=True)
+    torniquete_bano_final = Column(Integer, nullable=True)
+    torniquete_ducha_final = Column(Integer, nullable=True)
 
     movimientos = relationship("MovimientoCaja", back_populates="caja")
     ventas = relationship("Venta", back_populates="caja")
@@ -99,6 +102,7 @@ class Venta(Base):
     creado_en = Column(DateTime, default=datetime.now)
     servicio_id = Column(Integer, ForeignKey("servicios.id"), nullable=True)
     servicio_nombre = Column(String, nullable=False)
+    tipo_acceso = Column(String, nullable=True)  # bano | ducha; snapshot del acceso
     monto = Column(Integer, nullable=False)
     forma_pago = Column(String, nullable=False)  # efectivo | debito | credito | transferencia
     rut_cliente = Column(String, nullable=True)

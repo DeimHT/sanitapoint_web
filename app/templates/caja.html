@@ -10,6 +10,8 @@
   </div>
 </div>
 
+<div class="card" id="cuadre_turno" hidden></div>
+
 <div class="card">
   <h3>Resumen de hoy</h3>
   <div id="resumen_hoy">—</div>
@@ -43,11 +45,16 @@ async function cargarEstado() {
   const btnCerrar = document.getElementById("btn_cerrar");
   const btnRetiro = document.getElementById("btn_retiro");
   if (cajaActual) {
-    const nroAp = (cajaActual.nro_apertura ?? "—");
-    est.innerHTML = `🟢 Caja abierta &nbsp; | &nbsp; Operador: ${cajaActual.operador} &nbsp; | &nbsp; Apertura: ${new Date(cajaActual.fecha_apertura).toLocaleString("es-CL")} &nbsp; | &nbsp; Nro de aperturas: ${nroAp}`;
+    document.getElementById("cuadre_turno").innerHTML = renderCuadre(cajaActual);
+    document.getElementById("cuadre_turno").hidden = false;
+    est.textContent = `🟢 Caja abierta | Operador: ${cajaActual.operador} | Apertura: ${new Date(cajaActual.fecha_apertura).toLocaleString("es-CL")} | Caja inicial: ${fmtMonto(cajaActual.saldo_inicial)} | Torniquete Baño Inicial: ${cajaActual.torniquete_bano_inicial ?? "—"} | Torniquete Ducha Inicial: ${cajaActual.torniquete_ducha_inicial ?? "—"}`;
     btnAbrir.disabled = true; btnCerrar.disabled = false; btnRetiro.disabled = false;
     cargarMovimientos(cajaActual.id);
   } else {
+    const ultimo = await api.get("/api/caja/ultimo-cierre");
+    const cuadre = document.getElementById("cuadre_turno");
+    cuadre.hidden = !ultimo;
+    cuadre.innerHTML = ultimo ? `<h2>Último cierre · Caja #${ultimo.id}</h2>${renderCuadre(ultimo)}` : "";
     est.innerHTML = "🔴 Caja cerrada";
     btnAbrir.disabled = false; btnCerrar.disabled = true; btnRetiro.disabled = true;
     document.getElementById("tabla_movs").innerHTML = '<tr><td colspan="4">Sin caja abierta</td></tr>';
@@ -67,6 +74,7 @@ function aplicarPermisos() {
   document.getElementById("btn_abrir").hidden = !puede("caja_apertura");
   document.getElementById("btn_cerrar").hidden = !puede("caja_cierre");
   document.getElementById("btn_retiro").hidden = !puede("caja_retiro");
+  if (puede("caja_retiro")) document.getElementById("btn_retiro").disabled = false;
 }
 document.addEventListener("cuenta-lista", aplicarPermisos);
 
@@ -83,87 +91,115 @@ async function cargarMovimientos(cajaId) {
   });
 }
 
-document.getElementById("btn_abrir").onclick = async () => {
-  // El Nro de aperturas se sugiere con el del último cierre, pero es editable.
-  let sugerido = 0;
-  try { sugerido = (await api.get("/api/caja/sugerencia-apertura")).nro_apertura_sugerido ?? 0; } catch (e) {}
+document.getElementById("btn_abrir").onclick = () => {
   abrirModal(`
     <h3>Abrir caja</h3>
-    <div class="row"><div style="flex:1"><label>Operador</label><input id="in_operador"></div></div>
-    <div class="row"><div style="flex:1"><label>Saldo inicial</label><input id="in_saldo" type="number" value="0"></div></div>
-    <div class="row"><div style="flex:1"><label>Nro de aperturas</label>
-      <input id="in_nro_apertura" type="number" value="${sugerido}">
-      <div style="font-size:12px;color:var(--gris);margin-top:4px">Sugerido del último cierre: ${sugerido} (puedes modificarlo)</div>
+    <form id="form_apertura">
+    <div class="row"><div style="flex:1"><label for="in_saldo">Caja Inicial</label>
+      <input id="in_saldo" type="number" min="0" step="1" required>
+      <div style="font-size:12px;color:var(--gris);margin-top:4px">Dinero disponible en la caja al abrir, en pesos.</div>
+    </div></div>
+    <div class="row"><div style="flex:1"><label for="in_bano">Torniquete Baño Inicial</label>
+      <input id="in_bano" type="number" min="0" step="1" required>
+      <div style="font-size:12px;color:var(--gris);margin-top:4px">Número indicado en el torniquete de baño al iniciar el turno.</div>
+    </div></div>
+    <div class="row"><div style="flex:1"><label for="in_ducha">Torniquete Ducha Inicial</label>
+      <input id="in_ducha" type="number" min="0" step="1" required>
+      <div style="font-size:12px;color:var(--gris);margin-top:4px">Número indicado en el torniquete de ducha al iniciar el turno.</div>
     </div></div>
     <div class="row gap-top">
-      <button class="btn btn-verde" id="ok">Abrir</button>
-      <button class="btn btn-gris" onclick="cerrarModal()">Cancelar</button>
-    </div>`);
-  document.getElementById("ok").onclick = async () => {
+      <button class="btn btn-verde" id="ok" type="submit">Abrir</button>
+      <button class="btn btn-gris" type="button" onclick="cerrarModal()">Cancelar</button>
+    </div></form>`);
+  document.getElementById("form_apertura").onsubmit = async (event) => {
+    event.preventDefault();
+    const boton = document.getElementById("ok");
+    boton.disabled = true;
     try {
       await api.post("/api/caja/abrir", {
-        operador: document.getElementById("in_operador").value.trim() || "Operador",
-        saldo_inicial: Number(document.getElementById("in_saldo").value || 0),
-        nro_apertura: Number(document.getElementById("in_nro_apertura").value || 0),
+        saldo_inicial: Number(document.getElementById("in_saldo").value),
+        torniquete_bano_inicial: Number(document.getElementById("in_bano").value),
+        torniquete_ducha_inicial: Number(document.getElementById("in_ducha").value),
       });
       cerrarModal(); cargarEstado(); refrescarStatusbar();
     } catch (e) { alert(e.message); }
+    finally { boton.disabled = false; }
   };
 };
 
-document.getElementById("btn_cerrar").onclick = () => {
-  const nroAp = cajaActual && cajaActual.nro_apertura != null ? cajaActual.nro_apertura : null;
-  const refTxt = nroAp != null
-    ? `Debe ser mayor o igual al de apertura del día: ${nroAp}`
-    : "Ingresa el número del contador de aperturas de caja";
+document.getElementById("btn_cerrar").onclick = async () => {
+  try { cajaActual = await api.get("/api/caja"); }
+  catch (e) { alert(e.message); return; }
+  if (!cajaActual) { cargarEstado(); return; }
   abrirModal(`
     <h3>Cerrar caja</h3>
-    <div class="row"><div style="flex:1"><label>Conteo físico en caja</label><input id="in_saldo" type="number" value="0"></div></div>
-    <div class="row"><div style="flex:1"><label>Nro de aperturas *</label>
-      <input id="in_nro_cierre" type="number" ${nroAp != null ? `min="${nroAp}"` : ""} placeholder="Obligatorio">
-      <div style="font-size:12px;color:var(--gris);margin-top:4px">${refTxt}</div>
+    <p>Efectivo esperado: ${fmtMonto(cajaActual.saldo_esperado)} (inicial + ventas en efectivo − retiros).</p>
+    <p>Contadores internos: Baño ${cajaActual.contador_bano} · Ducha ${cajaActual.contador_ducha}.</p>
+    <form id="form_cierre">
+    <div class="row"><div style="flex:1"><label for="in_saldo">Caja Final</label>
+      <input id="in_saldo" type="number" min="0" step="1" required>
+      <p>Dinero contado en la caja al terminar el turno.</p>
+    </div></div>
+    <div class="row"><div style="flex:1"><label for="in_bano_final">Torniquete Baño Final</label>
+      <input id="in_bano_final" type="number" min="${cajaActual.torniquete_bano_inicial ?? 0}" step="1" required>
+      <p>Lectura inicial: ${cajaActual.torniquete_bano_inicial ?? "No registrada"}.</p>
+    </div></div>
+    <div class="row"><div style="flex:1"><label for="in_ducha_final">Torniquete Ducha Final</label>
+      <input id="in_ducha_final" type="number" min="${cajaActual.torniquete_ducha_inicial ?? 0}" step="1" required>
+      <p>Lectura inicial: ${cajaActual.torniquete_ducha_inicial ?? "No registrada"}.</p>
     </div></div>
     <div class="row gap-top">
-      <button class="btn btn-rojo" id="ok">Cerrar</button>
-      <button class="btn btn-gris" onclick="cerrarModal()">Cancelar</button>
-    </div>`);
-  document.getElementById("ok").onclick = async () => {
-    const rawNro = document.getElementById("in_nro_cierre").value.trim();
-    if (rawNro === "") { alert("El Nro de aperturas es obligatorio al cerrar la caja."); return; }
-    const nroCierre = Number(rawNro);
-    if (!Number.isInteger(nroCierre) || nroCierre < 0) { alert("El Nro de aperturas debe ser un número válido."); return; }
-    if (nroAp != null && nroCierre < nroAp) {
-      alert(`El Nro de aperturas al cierre (${nroCierre}) no puede ser menor que el de apertura del día (${nroAp}).`);
-      return;
-    }
+      <button class="btn btn-rojo" id="ok" type="submit">Cerrar</button>
+      <button class="btn btn-gris" type="button" onclick="cerrarModal()">Cancelar</button>
+    </div></form>`);
+  document.getElementById("form_cierre").onsubmit = async (event) => {
+    event.preventDefault();
+    const boton = document.getElementById("ok");
+    boton.disabled = true;
     try {
       await api.post("/api/caja/cerrar", {
-        saldo_final: Number(document.getElementById("in_saldo").value || 0),
-        nro_cierre: nroCierre,
+        saldo_final: Number(document.getElementById("in_saldo").value),
+        torniquete_bano_final: Number(document.getElementById("in_bano_final").value),
+        torniquete_ducha_final: Number(document.getElementById("in_ducha_final").value),
       });
       cerrarModal(); cargarEstado(); refrescarStatusbar();
     } catch (e) { alert(e.message); }
+    finally { boton.disabled = false; }
   };
 };
 
-document.getElementById("btn_retiro").onclick = () => {
+document.getElementById("btn_retiro").onclick = async () => {
+  let cajas;
+  try { cajas = await api.get("/api/caja/abiertas"); }
+  catch (e) { alert(e.message); return; }
+  if (!cajas.length) { alert("No hay cajas abiertas para retirar dinero."); return; }
   abrirModal(`
     <h3>Retiro de caja</h3>
-    <div class="row"><div style="flex:1"><label>Monto</label><input id="in_monto" type="number" value="0"></div></div>
+    <form id="form_retiro">
+    <div class="row"><div style="flex:1"><label for="in_caja">Caja del usuario</label><select id="in_caja" required></select></div></div>
+    <div class="row"><div style="flex:1"><label for="in_monto">Monto</label><input id="in_monto" type="number" min="1" step="1" required></div></div>
     <div class="row"><div style="flex:1"><label>Motivo</label><input id="in_desc"></div></div>
     <div class="row gap-top">
-      <button class="btn btn-amber" id="ok">Retirar</button>
-      <button class="btn btn-gris" onclick="cerrarModal()">Cancelar</button>
-    </div>`);
-  document.getElementById("ok").onclick = async () => {
+      <button class="btn btn-amber" id="ok" type="submit">Retirar</button>
+      <button class="btn btn-gris" type="button" onclick="cerrarModal()">Cancelar</button>
+    </div></form>`);
+  const selector = document.getElementById("in_caja");
+  selector.add(new Option("Selecciona la caja para el retiro", ""));
+  cajas.forEach((c) => selector.add(new Option(`#${c.id} · ${c.operador}`, c.id)));
+  document.getElementById("form_retiro").onsubmit = async (event) => {
+    event.preventDefault();
+    const boton = document.getElementById("ok");
+    boton.disabled = true;
     try {
       await api.post("/api/caja/movimiento", {
         tipo: "retiro",
+        caja_id: Number(selector.value),
         monto: Number(document.getElementById("in_monto").value || 0),
         descripcion: document.getElementById("in_desc").value.trim() || "Retiro",
       });
       cerrarModal(); cargarEstado();
     } catch (e) { alert(e.message); }
+    finally { boton.disabled = false; }
   };
 };
 

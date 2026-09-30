@@ -4,7 +4,7 @@
 <div class="card">
   <h2 style="margin:0">Cierres de caja</h2>
   <p style="color:var(--gris);font-size:13px;margin-top:8px">
-    Historial de turnos cerrados, con Nro de aperturas/torniquete y totales.
+    Historial de turnos por usuario, con diferencias de dinero y torniquetes.
   </p>
 </div>
 
@@ -13,12 +13,11 @@
     <thead>
       <tr>
         <th>#</th><th>Operador</th><th>Apertura</th><th>Cierre</th>
-        <th>Nro aper.</th><th>Nro cierre</th>
-        <th>Saldo inicial</th><th>Saldo final</th>
-        <th>Ventas</th><th>Retiros</th>
+        <th>Caja Inicial</th><th>Caja Final</th><th>Retiros</th>
+        <th>Diferencia dinero</th><th>Diferencia baño</th><th>Diferencia ducha</th><th>Detalle</th>
       </tr>
     </thead>
-    <tbody id="tabla"><tr><td colspan="10">Cargando…</td></tr></tbody>
+    <tbody id="tabla"><tr><td colspan="11">Cargando…</td></tr></tbody>
   </table>
 </div>
 
@@ -27,18 +26,29 @@ async function cargar() {
   const cierres = await api.get("/api/caja/cierres");
   const tbody = document.getElementById("tabla");
   tbody.innerHTML = "";
-  if (!cierres.length) { tbody.innerHTML = '<tr><td colspan="10">Sin cierres registrados</td></tr>'; return; }
+  if (!cierres.length) { tbody.innerHTML = '<tr><td colspan="11">Sin cierres registrados</td></tr>'; return; }
   cierres.forEach((c) => {
     const tr = document.createElement("tr");
     tr.innerHTML =
-      `<td>${c.id}</td><td>${c.operador || ""}</td>` +
+      `<td>${c.id}</td><td class="operador"></td>` +
       `<td>${c.fecha_apertura ? new Date(c.fecha_apertura).toLocaleString("es-CL") : "—"}</td>` +
       `<td>${c.fecha_cierre ? new Date(c.fecha_cierre).toLocaleString("es-CL") : "—"}</td>` +
-      `<td>${c.nro_apertura ?? "—"}</td><td>${c.nro_cierre ?? "—"}</td>` +
       `<td>${fmtMonto(c.saldo_inicial)}</td><td>${fmtMonto(c.saldo_final)}</td>` +
-      `<td>${fmtMonto(c.total_ventas)} <span style="color:var(--gris)">(${c.n_ventas})</span></td>` +
-      `<td>${fmtMonto(c.total_retiros)}</td>`;
+      `<td>${fmtMonto(c.total_retiros)}</td>` +
+      `<td>${c.diferencia_dinero == null ? "—" : fmtMonto(c.diferencia_dinero)}</td>` +
+      `<td>${c.diferencia_bano ?? "—"}</td><td>${c.diferencia_ducha ?? "—"}</td>` +
+      `<td><button class="btn btn-azul" aria-expanded="false">Ver cuadre</button></td>`;
+    tr.querySelector(".operador").textContent = c.operador || "";
     tbody.appendChild(tr);
+    const detalle = document.createElement("tr");
+    detalle.hidden = true;
+    detalle.innerHTML = `<td colspan="11">${renderCuadre(c)}</td>`;
+    tbody.appendChild(detalle);
+    tr.querySelector("button").onclick = (event) => {
+      detalle.hidden = !detalle.hidden;
+      event.currentTarget.setAttribute("aria-expanded", String(!detalle.hidden));
+      event.currentTarget.textContent = detalle.hidden ? "Ver cuadre" : "Ocultar cuadre";
+    };
   });
 }
 cargar();

@@ -116,9 +116,22 @@ main {
 .btn-gris { background: var(--gris); }
 
 .btn.selected {
-  outline: 3px solid white;
-  box-shadow: 0 0 0 3px currentColor;
+  outline: 3px solid var(--texto);
+  outline-offset: 3px;
+  box-shadow: inset 0 0 0 2px white;
 }
+
+#pagos { gap: 16px; padding: 6px; }
+#pagos .btn { display: inline-flex; align-items: center; gap: 10px; }
+#pagos .btn:focus-visible { outline: 3px dashed var(--azul-dark); outline-offset: 6px; }
+.pago-marca {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border-radius: 50%;
+  background: white; color: var(--texto); font-size: 16px;
+  visibility: hidden;
+}
+.selected .pago-marca { visibility: visible; }
+.pago-seleccionado { margin: 14px 0 0; font-size: 14px; font-weight: 700; }
 
 .grid-servicios {
   display: grid;
@@ -193,6 +206,7 @@ th { background: #ECEFF1; font-weight: 700; }
 .modal {
   background: white; border-radius: 10px; padding: 20px;
   width: 92%; max-width: 420px;
+  max-height: 90vh; overflow-y: auto;
 }
 
 .modal .row { margin-bottom: 10px; }
