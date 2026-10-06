@@ -1,141 +1,132 @@
-# SanitaPoint Web 🚿🚽
+# SanitaPoint Web
 
-Sistema POS web para servicios sanitarios (Uso de Baño / Ducha) con boleta
-electrónica vía KAME, apertura/cierre/retiro de caja, y reportes de ventas en
-PDF y Excel.
+SanitaPoint ayuda a llevar el cobro de **baños y duchas**: registra las ventas, entrega tickets y permite revisar el dinero y los accesos de cada turno. También se conecta con KAME para emitir boletas electrónicas.
 
-**Sin Docker. Base de datos SQLite (un solo archivo).** El servidor se levanta
-con un doble clic en el equipo central; cada caja se conecta abriendo el
-navegador en `http://<ip-servidor>:8000`. No se instala nada en las cajas
-aparte de un navegador.
+Se usa desde el navegador. Un computador principal mantiene el sistema funcionando y los equipos de caja se conectan a él por la misma red del local.
 
----
+## Cómo entrar
 
-## Instalación rápida (Windows — equipo servidor)
+1. En el computador principal, abre la carpeta de SanitaPoint y haz doble clic en **`iniciar_servidor.bat`**.
+2. Espera a que termine de iniciar. **Deja esa ventana abierta mientras se esté usando el sistema.**
+3. En ese computador, abre [SanitaPoint](http://localhost:8000). Si la página todavía no carga, espera unos segundos y vuelve a intentarlo.
+4. En los otros equipos, abre en el navegador la dirección que aparece en la ventana de inicio. Será parecida a `http://192.168.1.10:8000`; usa la que muestre tu equipo.
+5. Ingresa con tu usuario y contraseña.
 
-1. Instala **Python 3.11 o superior** desde <https://www.python.org/downloads/>.
-   ⚠️ Marca la casilla **"Add Python to PATH"** durante la instalación.
-2. Copia la carpeta `sanitapoint_web` al equipo que será el servidor.
-3. Haz **doble clic en `iniciar_servidor.bat`**.
-   - La **primera vez** instala todo automáticamente (tarda unos minutos).
-   - Las siguientes veces solo arranca el servidor.
-4. La ventana te mostrará la dirección que deben usar las cajas, por ejemplo
-   `http://192.168.1.10:8000`. Anótala.
+Puedes guardar la dirección en los favoritos del navegador para encontrarla más rápido.
 
-En cada **caja**: abre el navegador en esa dirección (puedes crear un acceso
-directo). Listo.
+### Si es la primera vez
 
-Para **apagar** el servidor: cierra la ventana negra del `.bat`.
+La persona encargada de instalar el sistema debe tener **Python 3.11 o superior** en el computador principal, con la opción **“Add Python to PATH”** marcada durante su instalación. Al abrir SanitaPoint por primera vez, se descargan los componentes necesarios; hace falta internet y puede tardar unos minutos.
 
-> En macOS/Linux usa `iniciar_servidor.command` (doble clic) en vez del `.bat`.
-
----
-
-## Acceso y seguridad
-
-El sistema pide **usuario y contraseña**. Hay cuatro grupos (roles):
-
-| Rol | Puede |
-|---|---|
-| **Cajero** | Emitir boletas, abrir caja (Nro de torniquete/aperturas) y cerrar su turno |
-| **Supervisor** | Retiros de caja |
-| **Contabilidad** | Ver informes de ventas y cierres; administrar cuentas/claves |
-| **Administrador** | Acceso completo a tarifas, impresora y prueba de conexión KAME |
-
-Cada usuario ve en el menú solo lo que su rol permite. Solo un administrador puede
-crear o modificar cuentas administradoras.
-
-**Cuenta inicial** (creada automáticamente la primera vez):
+En una instalación nueva, la cuenta inicial es:
 
 | Usuario | Contraseña |
 |---|---|
 | `admin` | `admin123` |
 
-⚠️ **Cambia esta contraseña tras el primer ingreso**: entra como `admin` →
-pestaña **Cuentas** → Editar → escribe una nueva contraseña. Desde ahí también
-creas las cuentas de los operadores.
+**Cambia esa contraseña al entrar:** ve a **Cuentas**, edita la cuenta `admin` y escribe una nueva contraseña. Crea una cuenta para cada persona que vaya a trabajar con el sistema.
 
-Las sesiones se mantienen con una cookie firmada; la clave de firma se guarda en
-`data/secret_key.txt` (no la borres: si se pierde, todos deben volver a ingresar).
+Antes de comenzar a vender, pide al administrador que revise los precios, los datos del negocio, la impresora y la conexión con KAME. Para emitir boletas reales, el acceso a KAME debe estar configurado y el computador principal debe tener internet.
 
----
+En Mac, el archivo de inicio es **`iniciar_servidor.command`**. Si no abre, solicita ayuda a quien instaló el sistema.
 
-## ¿Dónde quedan los datos?
+## El trabajo de cada día
 
-Todo vive en la carpeta `data/`:
-- `data/sanitapoint.db` → la base de datos completa (ventas, caja, usuarios…).
-- `data/tickets/` → los PDF de los tickets emitidos.
+### 1. Abrir tu caja
 
-**Backup = copiar el archivo `data/sanitapoint.db`.** Nada más. (Ver `GUIA.md`
-para el detalle de respaldos con el servidor apagado.)
+Entra con tu propia cuenta y ve a **Caja → Abrir caja**. Completa:
 
----
+- **Caja Inicial:** el dinero en efectivo con el que comienzas.
+- **Torniquete Baño Inicial:** el número que marca el contador del torniquete de baño.
+- **Torniquete Ducha Inicial:** el número que marca el contador del torniquete de ducha.
 
-## Integración KAME
+Pulsa **Abrir**. Cada cajero trabaja con su propio turno; necesitas tener la caja abierta para registrar ventas.
 
-La integración sigue `sanitapoint/modules/kame_api.py`: obtiene un token en
-`POST /oauth/token` y emite en `POST /api/Documento/addVenta`.
+### 2. Registrar una venta
 
-La integración se configura exclusivamente con variables `KAME_*` en `.env`
-(consulta `.env.example`). Para validar la autenticación sin emitir una boleta,
-entra a Configuración y pulsa **Probar conexión a KAME**. La prueba requiere
-`KAME_CLIENT_ID` y `KAME_CLIENT_SECRET`; un token Bearer fijo no se marca como
-válido sin hacer una operación real contra la API.
-La emisión usa **real** por defecto; configura `KAME_MODO=real` en `.env`.
-El modo **mock**, solo si se activa explícitamente, genera folios de prueba sin conexión. En modo real, las
-credenciales ausentes o los rechazos generan un error, nunca una simulación.
-La venta queda registrada aunque KAME falle y caja recibe el aviso. Ante una
-respuesta incierta, verifica en KAME antes de repetir la venta para evitar duplicados.
+1. Entra a **Venta**.
+2. Elige la forma de pago: **Efectivo** o **Transferencia**.
+3. Revisa el precio y pulsa el servicio: **Uso de Baño** o **Ducha**. **Al pulsarlo se registra la venta.**
+4. Revisa el resultado en pantalla: allí se indica el ticket, el estado de la boleta y si se envió a la impresora.
 
-Como en la integración de escritorio, las líneas usan precios brutos, IVA
-con redondeo decimal y `FormaPago = "1"`. El medio de pago del POS se conserva
-localmente. El token OAuth se reutiliza dentro de cada operación; no se
-comparte entre solicitudes web. No hay reintentos automáticos salvo un 401
-con credenciales OAuth. La conexión real debe validarse con la cuenta KAME.
+Puedes abrir el comprobante con **Ver PDF**. En **Historial** puedes consultar las ventas y volver a obtener sus tickets.
 
----
+Si aparece un error de KAME, **la venta puede haber quedado registrada aunque la boleta no se haya emitido**. Revisa el Historial y avisa al encargado para que compruebe el estado en KAME antes de repetir la operación.
 
-## Impresora térmica ESC/POS
+Si el resultado dice **“modo prueba”**, corresponde a una boleta de prueba. Pide al administrador que revise la configuración antes de usar el sistema para ventas reales.
 
-En ⚙️ Config → "Ticket e impresora térmica":
-- **Ninguna**: el ticket solo se genera como PDF descargable.
-- **Red**: IP y puerto (normalmente `9100`) de la impresora térmica de red.
-- **USB**: vendor/product ID.
+### 3. Registrar un pase libre
 
-En todos los casos se genera además un PDF de respaldo en `data/tickets/`.
+Los pases libres permiten registrar un acceso gratuito al **baño** para una persona registrada en **Clientes**.
 
----
+1. En **Venta**, pulsa **Registrar PASE LIBRE**.
+2. Busca a la persona por su nombre o RUT y pulsa **Elegir**.
+3. Si se ofrecen varios servicios de baño, selecciona el que corresponda.
+4. Comprueba que aparezca el aviso de pase registrado.
 
-## Reportes
+El sistema controla el máximo de pases diarios por persona y avisa cuando se alcanza el límite. El administrador puede ajustar ese límite en **Config**.
 
-Pestaña **📊 Reportes**: por día, por rango de fechas, por servicio y anual.
-Cada uno se descarga en **PDF** o **Excel**.
+### 4. Registrar un retiro de dinero
 
----
+Cuando se saca dinero de una caja durante el turno, el **supervisor o administrador** debe registrarlo en **Caja → Retiro**: selecciona la caja del usuario, indica el monto y el motivo, y pulsa **Retirar**.
 
-## Estructura del proyecto
+Así, ese dinero se tiene en cuenta al revisar el cierre.
 
-```
-sanitapoint_web/
-├── iniciar_servidor.bat       ← ▶ EJECUTABLE (Windows): doble clic para arrancar
-├── iniciar_servidor.command   ← equivalente para macOS/Linux
-├── app/
-│   ├── main.py                 ← app FastAPI; crea las tablas al iniciar
-│   ├── config.py                ← ruta de la base SQLite, puerto y clave de sesión
-│   ├── database.py               ← conexión SQLite (WAL para multi-caja)
-│   ├── models.py                  ← esquema (cuentas, servicios, cajas, ventas, usuarios…)
-│   ├── security.py                 ← hash de contraseñas (pbkdf2)
-│   ├── deps.py                      ← control de acceso (login / rol admin)
-│   ├── seed.py                       ← datos por defecto + admin inicial
-│   ├── routers/                       ← endpoints REST (incluye auth y cuentas)
-│   ├── services/                       ← KAME, impresión, reportes
-│   ├── templates/                       ← páginas web (incluye login y cuentas)
-│   └── static/                           ← CSS/JS
-├── data/
-│   ├── sanitapoint.db          ← la base de datos (se crea sola)
-│   └── tickets/                 ← PDFs de tickets
-└── requirements.txt
-```
+### 5. Cerrar tu turno
 
-Para instalación manual (sin el `.bat`) y detalles de operación, ver
-[`GUIA.md`](GUIA.md).
+1. Cuenta el efectivo que queda en tu caja.
+2. Ve a **Caja → Cerrar caja**.
+3. En **Caja Final**, escribe el efectivo contado.
+4. Ingresa las lecturas finales de los torniquetes de baño y ducha.
+5. Pulsa **Cerrar** y revisa el resumen.
+
+El sistema compara el efectivo contado con lo que debería haber: dinero inicial, más ventas en efectivo, menos retiros. Las transferencias no se suman al efectivo de la caja.
+
+También compara los accesos registrados con el avance de los torniquetes. Si hay un faltante, sobrante o diferencia de accesos, revísalo con el encargado; la diferencia queda registrada.
+
+Al terminar, pulsa **Salir** para cerrar tu sesión. Salir de la cuenta no reemplaza el cierre de caja.
+
+## Qué puede hacer cada persona
+
+El menú muestra las opciones disponibles para tu cuenta.
+
+| Tipo de cuenta | Funciones principales |
+|---|---|
+| **Cajero** | Abrir y cerrar su caja, registrar ventas y pases libres, consultar el historial y gestionar clientes. |
+| **Supervisor** | Registrar retiros de dinero de las cajas. |
+| **Contabilidad** | Consultar historial, reportes y cierres; administrar cuentas y contraseñas. |
+| **Administrador** | Acceder a todas las funciones y ajustar precios, impresora y configuración. |
+
+**Clientes** contiene las personas que usan los servicios y sus pases. **Cuentas** contiene las personas que ingresan a trabajar al sistema. Solo un administrador puede crear o modificar cuentas administradoras.
+
+Si olvidaste tu contraseña, pide a Contabilidad o al administrador que la cambie desde **Cuentas**. Para una cuenta administradora, debe hacerlo otro administrador.
+
+## Consultar ventas y cierres
+
+- **Historial:** busca ventas anteriores y consulta sus tickets.
+- **Cierres:** revisa los turnos y pulsa **Ver cuadre** para ver el detalle del dinero y los accesos.
+- **Reportes:** elige un día, un rango de fechas o un servicio y descarga el informe en **PDF** o **Excel**. También puedes obtener un reporte anual.
+
+## Guardar una copia de los datos
+
+Los datos se guardan en el computador principal, dentro de la carpeta **`data`** de SanitaPoint. Guarda una copia al finalizar la jornada:
+
+1. Comprueba que todas las cajas hayan terminado y que nadie esté usando el sistema.
+2. Detén SanitaPoint cerrando la ventana de inicio del computador principal.
+3. Copia la carpeta completa **`data`** a un pendrive o a otro lugar de respaldo. Ponle la fecha para identificarla.
+4. Vuelve a iniciar SanitaPoint si necesitas seguir trabajando.
+
+Esta copia incluye los registros, los tickets guardados y otros archivos necesarios para el funcionamiento. **No borres ni cambies los archivos de la carpeta original.** Si necesitas recuperar una copia, pide ayuda al encargado antes de reemplazar los datos actuales.
+
+## Si algo no funciona
+
+| Problema | Qué hacer |
+|---|---|
+| No abre la página | Comprueba que el computador principal esté encendido, que la ventana de SanitaPoint siga abierta y que ambos equipos estén conectados a la misma red. Usa la dirección indicada al iniciar. |
+| Aparece “No se encontró Python” | Pide al encargado que revise la instalación de Python en el computador principal. |
+| No puedes registrar una venta | Revisa que hayas abierto tu caja con la cuenta que estás usando. |
+| El ticket no sale en papel | Revisa que la impresora esté encendida, conectada y con papel. Abre el PDF de la venta y pide al administrador que revise la impresora en **Config**. No registres otra venta solo para imprimir. |
+| Aparece un error de KAME | Revisa el Historial y avisa al encargado. Antes de repetir la venta, hay que comprobar si KAME recibió la boleta. |
+| No aparece una opción del menú | Puede que tu cuenta no tenga permiso para usarla. Consulta al administrador. |
+
+Para instalación manual y detalles técnicos, la persona encargada puede consultar la [guía técnica](GUIA.md).
