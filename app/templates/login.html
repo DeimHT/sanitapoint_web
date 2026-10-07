@@ -14,6 +14,15 @@
     .login-card label { display: block; margin-bottom: 4px; }
     .login-card input, .login-card select { width: 100%; margin-bottom: 14px; }
     .login-card .btn { width: 100%; }
+    .usuario-combobox { position: relative; margin-bottom: 14px; }
+    .login-card .usuario-combobox input { margin: 0; padding-right: 38px; }
+    .usuario-desplegar { position: absolute; right: 0; top: 0; bottom: 0; width: 38px; border: 0; background: transparent; color: var(--gris); cursor: pointer; font-size: 18px; }
+    .usuario-opciones { position: absolute; top: calc(100% + 5px); left: 0; right: 0; z-index: 10; background: white; border: 1px solid #d6e1ea; border-radius: 9px; padding: 5px; max-height: 240px; overflow-y: auto; box-shadow: 0 8px 24px rgba(30,50,70,.14); }
+    .usuario-opcion { padding: 10px; border-radius: 5px; cursor: pointer; font-size: 13px; overflow-wrap: anywhere; }
+    .usuario-opcion.activa { background: #eaf2fc; color: #1559a3; }
+    .usuario-opcion[aria-disabled="true"] { color: #8b98a1; cursor: not-allowed; }
+    .usuario-vacio { margin: 0; padding: 10px; color: var(--gris); font-size: 13px; }
+    .usuario-resultados { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
   </style>
 </head>
 <body>
@@ -29,13 +38,19 @@
         <option value="{{ servicio }}">{{ servicio }}</option>
         {% endfor %}
       </select>
-      <label for="username">Usuario</label>
-      <select id="username" name="username" autocomplete="username" required>
+      <label for="usuario_combo">Usuario</label>
+      <div class="usuario-combobox" id="usuario_combobox">
+        <input id="usuario_combo" role="combobox" aria-expanded="false" aria-controls="usuario_opciones" aria-autocomplete="list" autocomplete="off" placeholder="Selecciona o escribe un usuario…" required>
+        <button type="button" class="usuario-desplegar" id="usuario_desplegar" aria-label="Mostrar usuarios" tabindex="-1">⌄</button>
+        <div id="usuario_opciones" class="usuario-opciones" role="listbox" aria-label="Usuarios" hidden></div>
+      </div>
+      <select id="username" name="username" hidden aria-hidden="true" tabindex="-1">
         <option value="" disabled selected>Selecciona un usuario</option>
         {% for cuenta in cuentas %}
         <option value="{{ cuenta.username }}" {% if not cuenta.activo %}disabled{% endif %}>{{ cuenta.username }}{% if cuenta.nombre %} — {{ cuenta.nombre }}{% endif %}{% if not cuenta.activo %} (desactivado){% endif %}</option>
         {% endfor %}
       </select>
+      <p id="usuarios_resultado" class="usuario-resultados" role="status"></p>
       {% if not cuentas %}<p>No hay usuarios registrados.</p>{% endif %}
       <label for="password">Contraseña</label>
       <input id="password" name="password" type="password" autocomplete="current-password" required>
@@ -46,6 +61,96 @@
   </div>
 
   <script>
+    const selectorUsuario = document.getElementById("username");
+    const opcionesUsuarios = Array.from(selectorUsuario.options).filter(o => o.value).map(o => ({
+      value: o.value, text: o.textContent, disabled: o.disabled,
+    }));
+    function normalizarBusqueda(texto) {
+      return texto.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+    }
+    const combo = document.getElementById("usuario_combo");
+    const lista = document.getElementById("usuario_opciones");
+    let visibles = [], indice = -1;
+    function cerrarUsuarios() {
+      lista.hidden = true;
+      combo.setAttribute("aria-expanded", "false");
+      combo.removeAttribute("aria-activedescendant");
+    }
+    function seleccionarUsuario(opcion) {
+      if (!opcion || opcion.disabled) return;
+      selectorUsuario.value = opcion.value;
+      combo.value = opcion.text;
+      combo.setCustomValidity("");
+      cerrarUsuarios();
+      combo.focus();
+    }
+    function resaltarUsuario() {
+      Array.from(lista.children).forEach((el, i) => {
+        el.classList.toggle("activa", i === indice);
+        el.setAttribute("aria-selected", String(visibles[i]?.value === selectorUsuario.value));
+      });
+      if (indice >= 0) {
+        combo.setAttribute("aria-activedescendant", `usuario_opcion_${indice}`);
+        document.getElementById(`usuario_opcion_${indice}`).scrollIntoView({ block: "nearest" });
+      } else combo.removeAttribute("aria-activedescendant");
+    }
+    function abrirUsuarios(mostrarTodos = false) {
+      const termino = mostrarTodos ? "" : normalizarBusqueda(combo.value.trim());
+      visibles = opcionesUsuarios.filter(o => normalizarBusqueda(o.text).includes(termino));
+      indice = -1;
+      lista.replaceChildren();
+      visibles.forEach((opcion, i) => {
+        const item = document.createElement("div");
+        item.id = `usuario_opcion_${i}`;
+        item.className = "usuario-opcion";
+        item.setAttribute("role", "option");
+        item.setAttribute("aria-disabled", String(opcion.disabled));
+        item.textContent = opcion.text;
+        item.addEventListener("mousedown", e => e.preventDefault());
+        item.addEventListener("click", () => seleccionarUsuario(opcion));
+        item.addEventListener("mousemove", () => { if (!opcion.disabled) { indice = i; resaltarUsuario(); } });
+        lista.appendChild(item);
+      });
+      if (!visibles.length) {
+        const empty = document.createElement("p");
+        empty.className = "usuario-vacio";
+        empty.textContent = "No se encontraron usuarios";
+        lista.appendChild(empty);
+      }
+      lista.hidden = false;
+      combo.setAttribute("aria-expanded", "true");
+      document.getElementById("usuarios_resultado").textContent = `${visibles.length} usuarios encontrados`;
+      resaltarUsuario();
+    }
+    combo.addEventListener("input", () => {
+      selectorUsuario.value = "";
+      combo.setCustomValidity("Selecciona una cuenta de la lista.");
+      abrirUsuarios();
+    });
+    combo.addEventListener("focus", () => abrirUsuarios(!!selectorUsuario.value));
+    combo.addEventListener("blur", cerrarUsuarios);
+    document.getElementById("usuario_desplegar").addEventListener("mousedown", e => e.preventDefault());
+    document.getElementById("usuario_desplegar").addEventListener("click", () => {
+      if (!lista.hidden) cerrarUsuarios();
+      else { combo.focus(); abrirUsuarios(true); }
+    });
+    combo.addEventListener("keydown", e => {
+      if (e.key === "Escape") { e.preventDefault(); cerrarUsuarios(); return; }
+      if (e.key === "Enter" && !lista.hidden) {
+        e.preventDefault();
+        const activas = visibles.filter(o => !o.disabled);
+        seleccionarUsuario(indice >= 0 ? visibles[indice] : activas.length === 1 ? activas[0] : null);
+        return;
+      }
+      if (!["ArrowDown", "ArrowUp"].includes(e.key)) return;
+      e.preventDefault();
+      if (lista.hidden) abrirUsuarios(!!selectorUsuario.value);
+      const indices = visibles.map((o, i) => o.disabled ? -1 : i).filter(i => i >= 0);
+      if (!indices.length) return;
+      const posicion = indices.indexOf(indice);
+      indice = indices[(posicion + (e.key === "ArrowDown" ? 1 : posicion < 0 ? 0 : -1) + indices.length) % indices.length];
+      resaltarUsuario();
+    });
     const err = document.getElementById("error");
     function mostrarError(msg) { err.textContent = msg; err.hidden = false; }
 
