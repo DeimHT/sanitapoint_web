@@ -14,7 +14,7 @@
 <div class="card">
   <table>
     <thead>
-      <tr><th>Ticket</th><th>Fecha</th><th>Servicio</th><th>Monto</th><th>Pago</th><th>RUT</th><th>Boleta</th><th>Pase</th><th></th></tr>
+      <tr><th>Ticket</th><th>Fecha</th><th>Servicio</th><th>Monto</th><th>Pago</th><th>RUT</th><th>Boleta</th><th>Pase</th><th>Acciones</th></tr>
     </thead>
     <tbody id="tabla"><tr><td colspan="9">Cargando…</td></tr></tbody>
   </table>
@@ -51,7 +51,36 @@ async function buscar() {
     tr.innerHTML = `<td>${v.ticket}</td><td>${new Date(v.creado_en).toLocaleString("es-CL")}</td>
       <td>${v.servicio_nombre}</td><td>${fmtMonto(v.monto)}</td><td>${v.forma_pago}</td>
       <td>${v.rut_cliente || ""}</td><td>${boleta}</td><td>${v.es_pase_libre ? "✅" : ""}</td>
-      <td><a href="/api/ventas/${v.ticket}/pdf" target="_blank">PDF</a></td>`;
+      <td>${v.es_pase_libre ? 'Acceso gratuito' : `<a href="/api/ventas/${v.ticket}/pdf" target="_blank">PDF</a>`}</td>`;
+    if (!v.es_pase_libre) {
+    const acciones = tr.lastElementChild;
+    const boton = document.createElement("button");
+    boton.type = "button";
+    boton.className = "btn btn-azul";
+    boton.style.cssText = "padding:6px 10px;min-height:auto;margin-left:8px";
+    boton.textContent = "Imprimir";
+    boton.setAttribute("aria-label", `Imprimir ticket ${v.ticket}`);
+    const estado = document.createElement("div");
+    estado.setAttribute("role", "status");
+    boton.addEventListener("click", async () => {
+      boton.disabled = true;
+      boton.textContent = "Enviando…";
+      estado.textContent = "";
+      try {
+        const res = await api.post(`/api/ventas/${encodeURIComponent(v.ticket)}/imprimir`, {});
+        estado.textContent = res.mensaje;
+        estado.style.color = res.ok ? "var(--verde)" : "var(--rojo)";
+      } catch (e) {
+        estado.textContent = e.message === "Not Found"
+          ? "Reinicia el servidor para cargar la función de impresión." : e.message;
+        estado.style.color = "var(--rojo)";
+      } finally {
+        boton.disabled = false;
+        boton.textContent = "Imprimir";
+      }
+    });
+    acciones.append(boton, estado);
+    }
     tbody.appendChild(tr);
   });
 }

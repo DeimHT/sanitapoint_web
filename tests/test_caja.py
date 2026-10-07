@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 
 from fastapi import HTTPException
 from pydantic import ValidationError
@@ -47,11 +47,30 @@ class AperturaCajaTests(unittest.TestCase):
         for campo in self.datos:
             datos = self.datos.copy()
             del datos[campo]
-            with self.assertRaises(ValidationError):
-                AbrirCajaIn(**datos)
-            for invalido in (-1, 1.5, "", None):
+            if campo != "torniquete_ducha_inicial":
+                with self.assertRaises(ValidationError):
+                    AbrirCajaIn(**datos)
+            for invalido in (-1, 1.5, "") + (() if campo == "torniquete_ducha_inicial" else (None,)):
                 with self.assertRaises(ValidationError):
                     AbrirCajaIn(**{**self.datos, campo: invalido})
+
+    def test_bano_2_opens_and_closes_without_shower_readings(self):
+        from app.routers.caja import cerrar_caja
+        from app.schemas import CerrarCajaIn
+        request = Mock(session={"servicio": "Ba\u00f1o 2"})
+        caja = abrir_caja(AbrirCajaIn(saldo_inicial=0, torniquete_bano_inicial=10),
+                          self.db, self.cuenta, request)
+        self.assertEqual(caja.servicio, "Ba\u00f1o 2")
+        self.assertIsNone(caja.torniquete_ducha_inicial)
+        cierre = cerrar_caja(CerrarCajaIn(saldo_final=0, torniquete_bano_final=10),
+                             self.db, self.cuenta)
+        self.assertIsNone(cierre.torniquete_ducha_final)
+
+    def test_bano_1_requires_shower_reading(self):
+        request = Mock(session={"servicio": "Ba\u00f1o 1"})
+        with self.assertRaises(HTTPException):
+            abrir_caja(AbrirCajaIn(saldo_inicial=0, torniquete_bano_inicial=10),
+                       self.db, self.cuenta, request)
 
     def test_migracion_conserva_datos_y_es_repetible(self):
         engine = create_engine("sqlite://")

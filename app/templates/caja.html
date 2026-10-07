@@ -47,7 +47,7 @@ async function cargarEstado() {
   if (cajaActual) {
     document.getElementById("cuadre_turno").innerHTML = renderCuadre(cajaActual);
     document.getElementById("cuadre_turno").hidden = false;
-    est.textContent = `🟢 Caja abierta | Operador: ${cajaActual.operador} | Apertura: ${new Date(cajaActual.fecha_apertura).toLocaleString("es-CL")} | Caja inicial: ${fmtMonto(cajaActual.saldo_inicial)} | Torniquete Baño Inicial: ${cajaActual.torniquete_bano_inicial ?? "—"} | Torniquete Ducha Inicial: ${cajaActual.torniquete_ducha_inicial ?? "—"}`;
+    est.textContent = `🟢 Caja abierta | Operador: ${cajaActual.operador} | Apertura: ${new Date(cajaActual.fecha_apertura).toLocaleString("es-CL")} | Caja inicial: ${fmtMonto(cajaActual.saldo_inicial)} | Torniquete Baño Inicial: ${cajaActual.torniquete_bano_inicial ?? "—"}${cajaActual.servicio === "Ba\u00f1o 2" ? "" : ` | Torniquete Ducha Inicial: ${cajaActual.torniquete_ducha_inicial ?? "—"}`}`;
     btnAbrir.disabled = true; btnCerrar.disabled = false; btnRetiro.disabled = false;
     cargarMovimientos(cajaActual.id);
   } else {
@@ -62,8 +62,8 @@ async function cargarEstado() {
   const r = await api.get("/api/caja/resumen/hoy");
   document.getElementById("resumen_hoy").innerHTML =
     `Ventas: ${r.total_transacciones} &nbsp;|&nbsp; Total: ${fmtMonto(r.total_monto)} ` +
-    `&nbsp;|&nbsp; Efectivo: ${fmtMonto(r.efectivo)} &nbsp;|&nbsp; Débito: ${fmtMonto(r.debito)} ` +
-    `&nbsp;|&nbsp; Crédito: ${fmtMonto(r.credito)} &nbsp;|&nbsp; Transferencia: ${fmtMonto(r.transferencia)} ` +
+    `&nbsp;|&nbsp; Efectivo: ${fmtMonto(r.efectivo)} &nbsp;|&nbsp; Tarjetas: ${fmtMonto(r.tarjetas)} ` +
+    (r.transferencia ? `&nbsp;|&nbsp; Transferencias anteriores: ${fmtMonto(r.transferencia)} ` : "") +
     `&nbsp;|&nbsp; Pases gratis: ${r.pases_gratis}`;
   aplicarPermisos();
 }
@@ -91,7 +91,10 @@ async function cargarMovimientos(cajaId) {
   });
 }
 
-document.getElementById("btn_abrir").onclick = () => {
+document.getElementById("btn_abrir").onclick = async () => {
+  let cuenta;
+  try { cuenta = await api.get("/api/auth/me"); } catch (e) { alert(e.message); return; }
+  const tieneDuchas = cuenta.servicio !== "Ba\u00f1o 2";
   abrirModal(`
     <h3>Abrir caja</h3>
     <form id="form_apertura">
@@ -103,10 +106,10 @@ document.getElementById("btn_abrir").onclick = () => {
       <input id="in_bano" type="number" min="0" step="1" required>
       <div style="font-size:12px;color:var(--gris);margin-top:4px">Número indicado en el torniquete de baño al iniciar el turno.</div>
     </div></div>
-    <div class="row"><div style="flex:1"><label for="in_ducha">Torniquete Ducha Inicial</label>
+    ${tieneDuchas ? `<div class="row"><div style="flex:1"><label for="in_ducha">Torniquete Ducha Inicial</label>
       <input id="in_ducha" type="number" min="0" step="1" required>
       <div style="font-size:12px;color:var(--gris);margin-top:4px">Número indicado en el torniquete de ducha al iniciar el turno.</div>
-    </div></div>
+    </div></div>` : ""}
     <div class="row gap-top">
       <button class="btn btn-verde" id="ok" type="submit">Abrir</button>
       <button class="btn btn-gris" type="button" onclick="cerrarModal()">Cancelar</button>
@@ -119,7 +122,7 @@ document.getElementById("btn_abrir").onclick = () => {
       await api.post("/api/caja/abrir", {
         saldo_inicial: Number(document.getElementById("in_saldo").value),
         torniquete_bano_inicial: Number(document.getElementById("in_bano").value),
-        torniquete_ducha_inicial: Number(document.getElementById("in_ducha").value),
+        torniquete_ducha_inicial: tieneDuchas ? Number(document.getElementById("in_ducha").value) : null,
       });
       cerrarModal(); cargarEstado(); refrescarStatusbar();
     } catch (e) { alert(e.message); }
@@ -131,10 +134,11 @@ document.getElementById("btn_cerrar").onclick = async () => {
   try { cajaActual = await api.get("/api/caja"); }
   catch (e) { alert(e.message); return; }
   if (!cajaActual) { cargarEstado(); return; }
+  const tieneDuchas = cajaActual.servicio !== "Ba\u00f1o 2";
   abrirModal(`
     <h3>Cerrar caja</h3>
     <p>Efectivo esperado: ${fmtMonto(cajaActual.saldo_esperado)} (inicial + ventas en efectivo − retiros).</p>
-    <p>Contadores internos: Baño ${cajaActual.contador_bano} · Ducha ${cajaActual.contador_ducha}.</p>
+    <p>Contadores internos: Baño ${cajaActual.contador_bano}${tieneDuchas ? ` · Ducha ${cajaActual.contador_ducha}` : ""}.</p>
     <form id="form_cierre">
     <div class="row"><div style="flex:1"><label for="in_saldo">Caja Final</label>
       <input id="in_saldo" type="number" min="0" step="1" required>
@@ -144,10 +148,10 @@ document.getElementById("btn_cerrar").onclick = async () => {
       <input id="in_bano_final" type="number" min="${cajaActual.torniquete_bano_inicial ?? 0}" step="1" required>
       <p>Lectura inicial: ${cajaActual.torniquete_bano_inicial ?? "No registrada"}.</p>
     </div></div>
-    <div class="row"><div style="flex:1"><label for="in_ducha_final">Torniquete Ducha Final</label>
+    ${tieneDuchas ? `<div class="row"><div style="flex:1"><label for="in_ducha_final">Torniquete Ducha Final</label>
       <input id="in_ducha_final" type="number" min="${cajaActual.torniquete_ducha_inicial ?? 0}" step="1" required>
       <p>Lectura inicial: ${cajaActual.torniquete_ducha_inicial ?? "No registrada"}.</p>
-    </div></div>
+    </div></div>` : ""}
     <div class="row gap-top">
       <button class="btn btn-rojo" id="ok" type="submit">Cerrar</button>
       <button class="btn btn-gris" type="button" onclick="cerrarModal()">Cancelar</button>
@@ -160,7 +164,7 @@ document.getElementById("btn_cerrar").onclick = async () => {
       await api.post("/api/caja/cerrar", {
         saldo_final: Number(document.getElementById("in_saldo").value),
         torniquete_bano_final: Number(document.getElementById("in_bano_final").value),
-        torniquete_ducha_final: Number(document.getElementById("in_ducha_final").value),
+        torniquete_ducha_final: tieneDuchas ? Number(document.getElementById("in_ducha_final").value) : null,
       });
       cerrarModal(); cargarEstado(); refrescarStatusbar();
     } catch (e) { alert(e.message); }

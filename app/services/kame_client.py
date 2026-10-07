@@ -318,4 +318,10 @@ def emitir_boleta(db, servicio_nombre, monto_total, forma_pago, rut_cliente=None
          'ticket_num': ticket_num, 'forma_pago': forma_pago},
         {'nombre': servicio_nombre},
     )
+    if result['ok'] and ticket_num and result.get('id'):
+        from app.models import Venta
+        venta = db.query(Venta).filter(Venta.ticket == ticket_num).first()
+        if venta is not None:
+            venta.kame_documento_id = result['id']
+            db.commit()
     return (result['folio'], 'ok') if result['ok'] else (result['mensaje'], 'error')

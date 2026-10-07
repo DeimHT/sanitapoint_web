@@ -1,11 +1,12 @@
 {% extends "base.html" %}
 {% block title %}Venta – SanitaPoint{% endblock %}
+{% block extra_head %}<script src="/static/js/cedula.js?v=1"></script>{% endblock %}
 {% block content %}
 <div class="card">
   <h2 id="titulo_pagos">Forma de pago</h2>
   <div class="row" id="pagos" role="group" aria-labelledby="titulo_pagos">
     <button type="button" class="btn btn-verde selected" data-pago="efectivo" aria-pressed="true">💵 Efectivo <span class="pago-marca" aria-hidden="true">✓</span></button>
-    <button type="button" class="btn btn-amber" data-pago="transferencia" aria-pressed="false">📲 Transferencia <span class="pago-marca" aria-hidden="true">✓</span></button>
+    <button type="button" class="btn btn-amber" data-pago="tarjetas" aria-pressed="false">💳 Tarjetas <span class="pago-marca" aria-hidden="true">✓</span></button>
   </div>
   <p id="pago_seleccionado" class="pago-seleccionado" role="status">Forma de pago seleccionada: Efectivo</p>
 </div>
@@ -18,17 +19,33 @@
   </div>
 </div>
 
-<div id="resultado"></div>
+<div id="resultado" role="status" aria-live="polite" aria-atomic="true"></div>
 
 <div id="modal_pase" class="modal-backdrop hidden">
   <div class="modal">
-    <div id="pase_panel_usuario">
-      <h3>Pase libre – Buscar usuario</h3>
-      <input id="pase_buscar" placeholder="Nombre o RUT…" style="width:100%;margin-bottom:10px">
+    <div id="pase_panel_escaner">
+      <div class="pase-escaner-icono" aria-hidden="true">▦</div>
+      <h3>Pase libre · Escanear cédula</h3>
+      <p class="configuracion-ayuda">Escanea el QR de la cédula para encontrar a la persona registrada.</p>
+      <label for="pase_lectura">Lectura del escáner</label>
+      <textarea id="pase_lectura" rows="3" placeholder="Escanea o pega aquí la URL de la cédula…" maxlength="8192" autocomplete="off" spellcheck="false"></textarea>
+      <div id="pase_lectura_estado" role="status"></div>
+      <div class="pase-coincidencia"><table><tbody id="pase_lectura_persona"></tbody></table></div>
+      <div class="row gap-top">
+        <button type="button" class="btn btn-azul" id="pase_leer">Revisar lectura</button>
+        <button type="button" class="btn btn-gris" id="pase_manual">Buscar por RUT</button>
+        <button type="button" class="btn btn-gris" onclick="cerrarModalPase()">Cancelar</button>
+      </div>
+    </div>
+    <div id="pase_panel_usuario" class="hidden">
+      <h3>Pase libre · Buscar por RUT</h3>
+      <label for="pase_buscar">RUT de la persona</label>
+      <input id="pase_buscar" placeholder="Ej. 20.622.632-3" style="width:100%;margin-bottom:10px" autocomplete="off">
       <div style="max-height:260px;overflow:auto">
         <table><tbody id="pase_lista"></tbody></table>
       </div>
       <div class="row gap-top">
+        <button type="button" class="btn btn-azul" id="pase_volver_escaner">Volver al escáner</button>
         <button class="btn btn-gris" onclick="cerrarModalPase()">Cancelar</button>
       </div>
     </div>
@@ -46,7 +63,34 @@
 let formaPago = "efectivo";
 let servicios = [];
 let usuarios = [];
-const nombresPago = { efectivo: "Efectivo", transferencia: "Transferencia" };
+let ventaEnCurso = false;
+let botonesBloqueados = [];
+function iniciarVenta(mensaje, boton) {
+  if (ventaEnCurso) return false;
+  ventaEnCurso = true;
+  botonesBloqueados = Array.from(document.querySelectorAll("#grid_servicios button, #pagos button, #btn_pase, #modal_pase button"))
+    .map(el => ({ el, disabled: el.disabled, texto: el.textContent }));
+  botonesBloqueados.forEach(({ el }) => { el.disabled = true; });
+  if (boton) boton.textContent = "Procesando…";
+  document.getElementById("grid_servicios").setAttribute("aria-busy", "true");
+  const resultado = document.getElementById("resultado");
+  resultado.replaceChildren();
+  const aviso = document.createElement("div");
+  aviso.className = "banner info";
+  aviso.textContent = mensaje;
+  resultado.appendChild(aviso);
+  return true;
+}
+function terminarVenta() {
+  botonesBloqueados.forEach(({ el, disabled, texto }) => {
+    el.disabled = disabled;
+    el.textContent = texto;
+  });
+  botonesBloqueados = [];
+  document.getElementById("grid_servicios").setAttribute("aria-busy", "false");
+  ventaEnCurso = false;
+}
+const nombresPago = { efectivo: "Efectivo", tarjetas: "Tarjetas" };
 
 document.querySelectorAll("#pagos button").forEach((b) => {
   b.addEventListener("click", () => {
@@ -61,14 +105,19 @@ document.querySelectorAll("#pagos button").forEach((b) => {
 });
 
 async function cargarServicios() {
+  const cuenta = await api.get("/api/auth/me");
+  const caja = await api.get("/api/caja");
   servicios = await api.get("/api/servicios");
+  if ((caja?.servicio || cuenta.servicio) === "Ba\u00f1o 2") {
+    servicios = servicios.filter(s => !s.nombre.toLowerCase().includes("ducha"));
+  }
   const grid = document.getElementById("grid_servicios");
   grid.innerHTML = "";
   servicios.forEach((s) => {
     const btn = document.createElement("button");
     btn.textContent = `${s.nombre}\n${fmtMonto(s.precio)}`;
     btn.style.whiteSpace = "pre-line";
-    btn.onclick = () => vender(s);
+    btn.onclick = () => vender(s, btn);
     grid.appendChild(btn);
   });
 }
@@ -77,7 +126,34 @@ function mostrarResultado(html, tipo) {
   document.getElementById("resultado").innerHTML = `<div class="banner ${tipo}">${html}</div>`;
 }
 
-async function vender(servicio) {
+function escaparResultado(valor) {
+  return String(valor ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"}[c]));
+}
+
+function mostrarVentaConfirmada(venta, kame, impresion) {
+  const e = escaparResultado;
+  document.getElementById("resultado").innerHTML = `
+    <section class="venta-confirmacion" aria-label="Resultado de la venta">
+      <div class="venta-confirmacion-cabecera">
+        <span class="venta-confirmacion-icono" aria-hidden="true">✓</span>
+        <div class="venta-confirmacion-titulo"><p>Venta registrada</p><h3>${e(venta.servicio_nombre)}</h3></div>
+        <strong class="venta-confirmacion-monto">${e(fmtMonto(venta.monto))}</strong>
+      </div>
+      <div class="venta-confirmacion-detalle">
+        <div><span class="venta-confirmacion-etiqueta">Ticket</span><strong>${e(venta.ticket)}</strong></div>
+        <div><span class="venta-confirmacion-etiqueta">Boleta</span><strong>${e(kame)}</strong></div>
+        <div><span class="venta-confirmacion-etiqueta">Impresión</span><span>${e(impresion)}</span></div>
+      </div>
+      <div class="venta-confirmacion-acciones">
+        <button type="button" class="btn btn-azul" id="btn_imprimir_boleta">Imprimir boleta</button>
+        <a class="venta-confirmacion-pdf" href="/api/ventas/${encodeURIComponent(venta.ticket)}/pdf" target="_blank" rel="noopener">Ver PDF <span aria-hidden="true">↗</span></a>
+      </div>
+      <div id="estado_impresion" class="venta-confirmacion-estado" role="status"></div>
+    </section>`;
+}
+
+async function vender(servicio, boton) {
+  if (!iniciarVenta(`Procesando ${servicio.nombre} · ${fmtMonto(servicio.precio)}. Espera el resultado de la venta…`, boton)) return;
   try {
     const venta = await api.post("/api/ventas", {
       servicio_id: servicio.id,
@@ -89,47 +165,109 @@ async function vender(servicio) {
       : venta.estado_kame === "error" ? "Error KAME: revisa el aviso" : "Sin boleta KAME";
     const impresion = venta.impreso_termica ? "Ticket enviado a impresora térmica."
       : `Ticket generado en PDF (${venta.detalle_impresion}).`;
-    mostrarResultado(
-      `✅ ${venta.servicio_nombre} · ${fmtMonto(venta.monto)} · Ticket ${venta.ticket}<br>` +
-      `${kame} · ${impresion} ` +
-      `<a href="/api/ventas/${venta.ticket}/pdf" target="_blank">Ver PDF</a>`,
-      "ok"
-    );
+    mostrarVentaConfirmada(venta, kame, impresion);
+    document.getElementById("btn_imprimir_boleta").onclick = async function () {
+      this.disabled = true;
+      const estado = document.getElementById("estado_impresion");
+      estado.textContent = " Enviando...";
+      try {
+        const res = await api.post(`/api/ventas/${venta.ticket}/imprimir`, {});
+        estado.textContent = " " + res.mensaje;
+      } catch (e) { estado.textContent = " " + e.message; }
+      finally { this.disabled = false; }
+    };
     refrescarStatusbar();
   } catch (e) {
     mostrarResultado(e.message, "error");
+  } finally {
+    terminarVenta();
   }
 }
 
 async function abrirModalPase() {
-  usuarios = await api.get("/api/usuarios");
-  renderPases(usuarios);
-  mostrarPanelPase("usuario");
+  if (ventaEnCurso) return;
+  document.getElementById("pase_lectura").value = "";
+  document.getElementById("pase_buscar").value = "";
+  document.getElementById("pase_lectura_persona").replaceChildren();
+  document.getElementById("pase_lista").replaceChildren();
+  document.getElementById("pase_lectura_estado").textContent = "Cargando personas autorizadas…";
+  usuarios = [];
+  mostrarPanelPase("escaner");
   document.getElementById("modal_pase").classList.remove("hidden");
+  document.getElementById("pase_lectura").disabled = true;
+  try {
+    const config = await api.get("/api/usuarios/lector/config");
+    usuarios = await api.get("/api/usuarios");
+    document.getElementById("pase_lectura_estado").textContent = config.modo === "ninguno"
+      ? "El lector está desactivado en Configuración. Usa Buscar por RUT."
+      : "Listo para escanear. También puedes pegar el contenido del QR y presionar Enter.";
+    document.getElementById("pase_lectura").disabled = config.modo === "ninguno";
+    document.getElementById("pase_leer").disabled = config.modo === "ninguno";
+    if (config.modo !== "ninguno") document.getElementById("pase_lectura").focus();
+  } catch (e) { document.getElementById("pase_lectura_estado").textContent = e.message; }
 }
 function cerrarModalPase() {
   document.getElementById("modal_pase").classList.add("hidden");
+  document.getElementById("pase_lectura").value = "";
 }
 function mostrarPanelPase(panel) {
+  document.getElementById("pase_panel_escaner").classList.toggle("hidden", panel !== "escaner");
   document.getElementById("pase_panel_usuario").classList.toggle("hidden", panel !== "usuario");
   document.getElementById("pase_panel_servicio").classList.toggle("hidden", panel !== "servicio");
 }
-function renderPases(lista) {
-  const tbody = document.getElementById("pase_lista");
+function renderPases(lista, destino = "pase_lista") {
+  const tbody = document.getElementById(destino);
   tbody.innerHTML = "";
   lista.forEach((u) => {
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td>${u.nombre}</td><td>${u.rut || ""}</td>
+    tr.innerHTML = `<td>${escaparResultado(u.nombre)}</td><td>${escaparResultado(u.rut || "")}</td>
       <td><button class="btn btn-azul" style="padding:6px 10px;min-height:auto">Elegir</button></td>`;
     tr.querySelector("button").onclick = () => elegirServicioPase(u);
     tbody.appendChild(tr);
   });
 }
 document.getElementById("pase_buscar").addEventListener("input", (e) => {
-  const t = e.target.value.toLowerCase();
-  renderPases(usuarios.filter((u) =>
-    u.nombre.toLowerCase().includes(t) || (u.rut || "").toLowerCase().includes(t)));
+  const t = normalizarRutPase(e.target.value);
+  const coincidencias = t ? usuarios.filter(u => normalizarRutPase(u.rut).includes(t)) : [];
+  renderPases(coincidencias);
+  if (t && !coincidencias.length) document.getElementById("pase_lista").innerHTML = '<tr><td>No hay una persona registrada con ese RUT.</td></tr>';
 });
+function normalizarRutPase(rut) { return String(rut || "").replace(/[.\s]/g, "").toUpperCase(); }
+function buscarPaseEscaneado() {
+  if (ventaEnCurso || document.getElementById("pase_lectura").disabled) return;
+  const estado = document.getElementById("pase_lectura_estado");
+  const contenido = document.getElementById("pase_lectura").value.trim();
+  if (!contenido) {
+    estado.textContent = "Pega la URL de la cédula o escanéala antes de revisar los datos.";
+    document.getElementById("pase_lectura").focus();
+    return;
+  }
+  try {
+    const lectura = leerCedula(contenido);
+    const persona = usuarios.find(u => normalizarRutPase(u.rut) === lectura.rut);
+    document.getElementById("pase_lectura_persona").replaceChildren();
+    if (!persona) {
+      estado.textContent = "Esta persona no está registrada para pases libres. Regístrala primero en Pases libres.";
+      return;
+    }
+    estado.textContent = "Persona encontrada. Pulsa Elegir para registrar su pase libre.";
+    renderPases([persona], "pase_lectura_persona");
+  } catch (e) { estado.textContent = e.message; }
+}
+document.getElementById("pase_lectura").addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); buscarPaseEscaneado(); }
+});
+document.getElementById("pase_lectura").addEventListener("input", () => {
+  document.getElementById("pase_lectura_persona").replaceChildren();
+  document.getElementById("pase_lectura_estado").textContent = "Lectura recibida. Pulsa Revisar lectura o Enter.";
+});
+document.getElementById("pase_leer").onclick = buscarPaseEscaneado;
+document.getElementById("pase_manual").onclick = () => {
+  mostrarPanelPase("usuario"); document.getElementById("pase_buscar").focus();
+};
+document.getElementById("pase_volver_escaner").onclick = () => {
+  mostrarPanelPase("escaner"); document.getElementById("pase_lectura").focus();
+};
 
 function elegirServicioPase(usuario) {
   const serviciosBano = servicios.filter((s) => s.nombre.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().includes("bano"));
@@ -153,6 +291,7 @@ function elegirServicioPase(usuario) {
 }
 
 async function confirmarPaseLibre(usuario, servicio) {
+  if (!iniciarVenta("Registrando pase libre. Espera el resultado…", document.getElementById("btn_pase"))) return;
   cerrarModalPase();
   try {
     const check = await api.get(`/api/usuarios/${usuario.id}/pases/check`);
@@ -164,10 +303,12 @@ async function confirmarPaseLibre(usuario, servicio) {
       servicio_id: servicio.id, forma_pago: "efectivo",
       usuario_id: usuario.id, es_pase_libre: true,
     });
-    mostrarResultado(`✅ PASE LIBRE registrado · Ticket ${venta.ticket} · ${venta.servicio_nombre}`, "info");
+    mostrarResultado(`✓ Pase libre registrado para ${escaparResultado(usuario.nombre)}. Se sumó un pase libre y un acceso al contador de baño.`, "ok");
     refrescarStatusbar();
   } catch (e) {
     mostrarResultado(e.message, "error");
+  } finally {
+    terminarVenta();
   }
 }
 

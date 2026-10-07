@@ -4,16 +4,13 @@ Generación e impresión del ticket interno + boleta.
 - Siempre se genera un PDF (80mm, reportlab) que queda guardado en disco para
   descarga/reimpresión desde el historial.
 - Si hay una impresora térmica ESC/POS configurada (red o USB), también se envía
-  una copia de texto plano a la impresora física.
+  el mismo diseño de 80 mm a la impresora física.
 """
 import os
+import sys
 from datetime import datetime
-from xml.sax.saxutils import escape
 
-from reportlab.lib.enums import TA_CENTER, TA_LEFT
-from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm as mmU
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
 from sqlalchemy.orm import Session
 
 from app.services.config_store import get_config
@@ -29,7 +26,7 @@ PAGE_HEIGHT = 200 * mmU
 MARGIN = 4 * mmU
 
 FORMAS_LABEL = {
-    "efectivo": "Efectivo",
+    "efectivo": "Efectivo", "tarjetas": "Tarjetas",
     "debito": "Tarjeta Débito",
     "credito": "Tarjeta Crédito",
     "transferencia": "Transferencia",
@@ -43,44 +40,22 @@ def ticket_pdf_path(ticket_num: str) -> str:
 def generar_ticket_pdf(db: Session, ticket_num: str, servicio_nombre: str, monto: int,
                         forma_pago: str, folio_kame: str | None, estado_kame: str,
                         rut_cliente: str | None, es_pase_libre: bool,
-                        creado_en: datetime | None = None) -> str:
-    # Tipografía monoespaciada y bloques como un comprobante térmico.
-    estilos = {
-        (align, bold): ParagraphStyle(
-            f"{align}-{bold}", fontName="Courier-Bold" if bold else "Courier",
-            fontSize=10 if bold else 9, leading=13,
-            alignment=TA_CENTER if align == "center" else TA_LEFT,
-        )
-        for align in ("center", "left") for bold in (False, True)
-    }
-    total_style = ParagraphStyle("total", parent=estilos[("left", True)],
-                                 fontSize=16, leading=21)
-    story = []
-    for align, bold, texto in _lineas_escpos(
-        ticket_num, servicio_nombre, monto, forma_pago, folio_kame,
-        estado_kame, rut_cliente, es_pase_libre,
-        get_config(db, "empresa_nombre", "Servicios Sanitarios"),
-        get_config(db, "ticket_pie", "¡Gracias por su visita!"),
-        empresa_rut=get_config(db, "empresa_rut", ""),
-        empresa_direccion=get_config(db, "empresa_direccion", ""),
-        empresa_telefono=get_config(db, "empresa_telefono", ""),
-        creado_en=creado_en,
-    ):
-        if not texto:
-            story.append(Spacer(1, 3 * mmU))
-            continue
-        style = total_style if texto.startswith("TOTAL:") else estilos[(align, bold)]
-        story.append(Paragraph(escape(texto).replace("\n", "<br/>"), style))
-    # Altura ajustada al contenido: evita una cola de papel vacía y permite
-    # nombres/direcciones largos sin recortar campos ni dividir la boleta.
-    ancho = PAGE_WIDTH - 2 * MARGIN - 12
-    alto = sum(item.wrap(ancho, 10000)[1] for item in story)
+                        creado_en: datetime | None = None, servicio_codigo=None) -> str:
+    if es_pase_libre:
+        raise ValueError("Los pases libres no generan PDF")
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.utils import ImageReader
+    from app.services.receipt_layout import render_receipt
+
+    receipt = render_receipt(db, ticket_num, servicio_nombre, monto, forma_pago,
+                             folio_kame, estado_kame, rut_cliente, es_pase_libre, creado_en, servicio_codigo)
+    width = 72 * mmU
+    height = receipt.height * width / receipt.width
     path = ticket_pdf_path(ticket_num)
-    doc = SimpleDocTemplate(
-        path, pagesize=(PAGE_WIDTH, max(100 * mmU, alto + 2 * MARGIN + 14)),
-        leftMargin=MARGIN, rightMargin=MARGIN, topMargin=MARGIN, bottomMargin=MARGIN,
-    )
-    doc.build(story)
+    doc = canvas.Canvas(path, pagesize=(PAGE_WIDTH, height + 2 * MARGIN))
+    doc.drawImage(ImageReader(receipt.convert("RGB")), MARGIN, MARGIN,
+                  width=width, height=height)
+    doc.save()
     return path
 
 
@@ -138,6 +113,8 @@ def _lineas_escpos(ticket_num, servicio_nombre, monto, forma_pago, folio_kame,
 
 def imprimir_escpos(db: Session, **kwargs) -> tuple[bool, str]:
     """Envía el ticket a la impresora térmica ESC/POS configurada. No lanza excepción."""
+    if kwargs.get("es_pase_libre"):
+        return False, "Pase libre: no corresponde imprimir"
     tipo = get_config(db, "impresora_tipo", "ninguna")
     if tipo == "ninguna":
         return False, "Sin impresora térmica configurada"
@@ -147,6 +124,7 @@ def imprimir_escpos(db: Session, **kwargs) -> tuple[bool, str]:
     except ImportError:
         return False, "python-escpos no está instalado"
 
+    printer = None
     try:
         if tipo == "red":
             ip = get_config(db, "impresora_ip", "")
@@ -155,41 +133,70 @@ def imprimir_escpos(db: Session, **kwargs) -> tuple[bool, str]:
                 return False, "Falta IP de la impresora de red"
             printer = Network(ip, port=puerto, timeout=5)
         elif tipo == "usb":
-            vendor = get_config(db, "impresora_usb_vendor", "0x04b8")
-            product = get_config(db, "impresora_usb_product", "0x0202")
-            printer = Usb(int(vendor, 16), int(product, 16))
+            if not Usb.is_usable():
+                return False, "Falta el soporte USB. Cierra el servidor y abre iniciar_servidor.bat para instalarlo."
+            vendor = get_config(db, "impresora_usb_vendor", "")
+            product = get_config(db, "impresora_usb_product", "")
+            if not vendor or not product:
+                return False, "Faltan los identificadores VID y PID de la impresora USB"
+            usb_args = {}
+            if sys.platform == "win32":
+                try:
+                    import libusb_package
+                except ImportError:
+                    return False, "Falta libusb para Windows. Reinicia desde iniciar_servidor.bat para instalarlo."
+                backend = libusb_package.get_libusb1_backend()
+                if backend is None:
+                    return False, "No se pudo cargar libusb. Reinicia el sistema y revisa la instalación del soporte USB."
+                usb_args["backend"] = backend
+            printer = Usb(int(vendor, 16), int(product, 16), usb_args=usb_args, timeout=5000)
+        elif tipo == "windows":
+            from escpos.printer import Win32Raw
+            nombre = get_config(db, "impresora_nombre", "")
+            if not nombre:
+                return False, "Selecciona una impresora instalada en Windows"
+            if not Win32Raw.is_usable():
+                return False, "Falta el componente de impresión Windows. Reinicia el sistema desde iniciar_servidor.bat para instalarlo."
+            printer = Win32Raw(nombre)
         else:
             return False, f"Tipo de impresora desconocido: {tipo}"
 
-        empresa_nombre = get_config(db, "empresa_nombre", "Servicios Sanitarios")
-        ticket_pie = get_config(db, "ticket_pie", "")
-        for align, bold, texto in _lineas_escpos(
-            empresa_nombre=empresa_nombre, ticket_pie=ticket_pie,
-            empresa_rut=get_config(db, "empresa_rut", ""),
-            empresa_direccion=get_config(db, "empresa_direccion", ""),
-            empresa_telefono=get_config(db, "empresa_telefono", ""), **kwargs
-        ):
-            printer.set(align=align, bold=bold, double_height=texto.startswith("TOTAL:"),
-                        double_width=texto.startswith("TOTAL:"))
-            printer.text(texto + "\n")
+        from app.services.receipt_layout import render_receipt
+        receipt = render_receipt(db, **kwargs)
+        printer.set(align="center")
+        printer.image(receipt, impl="bitImageRaster", center=False)
         printer.cut()
-        printer.close()
         return True, "OK"
     except Exception as e:
         return False, f"Error de impresión ESC/POS: {e}"
+    finally:
+        if printer is not None:
+            try:
+                printer.close()
+            except Exception:
+                pass
 
 
 def emitir_ticket(db: Session, ticket_num: str, servicio_nombre: str, monto: int,
                    forma_pago: str, folio_kame: str | None, estado_kame: str,
-                   rut_cliente: str | None, es_pase_libre: bool) -> dict:
+                   rut_cliente: str | None, es_pase_libre: bool,
+                   creado_en=None, servicio_codigo=None) -> dict:
     """Genera el PDF (siempre) e intenta imprimir en la térmica (si está configurada)."""
+    if es_pase_libre:
+        return {"pdf_path": None, "impreso_termica": False,
+                "detalle_impresion": "Pase libre registrado sin boleta ni impresión"}
     pdf_path = generar_ticket_pdf(
         db, ticket_num, servicio_nombre, monto, forma_pago,
         folio_kame, estado_kame, rut_cliente, es_pase_libre,
+        creado_en=creado_en, servicio_codigo=servicio_codigo,
     )
+    if get_config(db, "impresora_automatica", "1") != "1":
+        return {"pdf_path": pdf_path, "impreso_termica": False,
+                "detalle_impresion": "Pulsa Imprimir boleta para enviarla a la impresora"}
     impreso, detalle = imprimir_escpos(
         db, ticket_num=ticket_num, servicio_nombre=servicio_nombre, monto=monto,
         forma_pago=forma_pago, folio_kame=folio_kame, estado_kame=estado_kame,
         rut_cliente=rut_cliente, es_pase_libre=es_pase_libre,
+        creado_en=creado_en, servicio_codigo=servicio_codigo,
     )
     return {"pdf_path": pdf_path, "impreso_termica": impreso, "detalle_impresion": detalle}

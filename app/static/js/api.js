@@ -50,7 +50,7 @@ async function refrescarStatusbar() {
     const caja = await api.get("/api/caja");
     const ahora = new Date().toLocaleString("es-CL");
     if (caja) {
-      el.textContent = `${ahora} | CAJA ABIERTA — ${caja.operador} | Contadores: Baño ${caja.contador_bano} · Ducha ${caja.contador_ducha}`;
+      el.textContent = `${ahora} | CAJA ABIERTA — ${caja.operador} | Contadores: Baño ${caja.contador_bano}${caja.servicio === "Ba\u00f1o 2" ? "" : ` · Ducha ${caja.contador_ducha}`}`;
     } else {
       el.innerHTML = `${ahora} &nbsp;|&nbsp; <span class="pill cerrada">CAJA CERRADA</span>`;
     }
@@ -89,6 +89,12 @@ async function cargarUsuarioNav() {
     return; // si 401, api._checkAuth ya redirige al login
   }
   const nav = document.getElementById("nav_user");
+  const servicio = document.getElementById("nav_servicio");
+  if (servicio) {
+    servicio.hidden = !cuentaActual.servicio;
+    servicio.textContent = cuentaActual.servicio || "";
+    servicio.setAttribute("aria-label", `Servicio seleccionado: ${cuentaActual.servicio || ""}`);
+  }
   if (nav) {
     const rolLabel = ETIQUETA_ROL[cuentaActual.rol] || cuentaActual.rol;
     nav.textContent = `${cuentaActual.nombre || cuentaActual.username} · ${rolLabel}`;

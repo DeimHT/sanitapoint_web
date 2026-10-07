@@ -1,30 +1,41 @@
 {% extends "base.html" %}
 {% block title %}Cuentas – SanitaPoint{% endblock %}
 {% block content %}
-<div class="card">
-  <div class="row">
-    <h2 style="margin:0;flex:1">Cuentas de acceso</h2>
-    <button class="btn btn-verde" id="btn_nueva">➕ Nueva cuenta</button>
+<div class="card cuentas-portada">
+  <div class="cuentas-cabecera">
+    <div><span class="cuentas-eyebrow">ADMINISTRACIÓN</span><h2>Cuentas de acceso</h2><p>Gestiona quién puede entrar al sistema y sus permisos.</p></div>
+    <div class="cuentas-acciones"><button class="btn cuentas-secundario" id="btn_importar">Importar Excel</button>
+    <button class="btn btn-verde" id="btn_nueva">+ Nueva cuenta</button></div>
   </div>
-  <ul style="color:var(--gris);font-size:13px;margin-top:10px">
-    <li><b>Cajero</b>: emite boletas, abre caja (Nro de torniquete) y cierra su turno.</li>
-    <li><b>Supervisor</b>: retiros de caja.</li>
-    <li><b>Contabilidad</b>: informes de ventas, cierres y administración de cuentas/claves.</li>
-    <li><b>Administrador</b>: acceso completo, incluidas las configuraciones.</li>
-  </ul>
+  <div class="cuentas-metricas"><div><strong id="cuentas_total">—</strong><span>Cuentas registradas</span></div><div><strong id="cuentas_activas">—</strong><span>Activas</span></div><div><strong id="cuentas_inactivas">—</strong><span>Inactivas</span></div></div>
+  <details class="cuentas-permisos"><summary>Ver permisos de cada rol</summary><div class="cuentas-roles">
+    <div><b>Cajero</b><p>Ventas, apertura y cierre de su turno.</p></div>
+    <div><b>Supervisor</b><p>Retiros de caja.</p></div>
+    <div><b>Contabilidad</b><p>Reportes, cierres y gestión de cuentas.</p></div>
+    <div><b>Administrador</b><p>Acceso completo y configuración.</p></div>
+  </div></details>
 </div>
 
-<div class="card">
+<div id="cuentas_resultado" role="status"></div>
+<div class="card cuentas-listado">
+  <div class="cuentas-filtros"><div><h3>Equipo y permisos</h3><p id="cuentas_cantidad"></p></div>
+    <div class="cuentas-acciones"><input id="buscar_cuenta" aria-label="Buscar cuenta" placeholder="Buscar por usuario o nombre…"><select id="filtro_estado" aria-label="Filtrar por estado"><option value="">Todos los estados</option><option value="activa">Activas</option><option value="inactiva">Inactivas</option></select></div>
+  </div>
+  <div class="cuentas-tabla">
   <table>
-    <thead><tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Estado</th><th></th></tr></thead>
+    <thead><tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Estado</th><th>Acciones</th></tr></thead>
     <tbody id="tabla"><tr><td colspan="5">Cargando…</td></tr></tbody>
   </table>
+  </div>
 </div>
 
 <div id="modal" class="modal-backdrop hidden"><div class="modal" id="modal_body"></div></div>
 
 <script>
 let cuentas = [];
+function esc(valor) {
+  return String(valor ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"}[c]));
+}
 
 function cerrarModal() { document.getElementById("modal").classList.add("hidden"); }
 function abrirModal(html) {
@@ -33,19 +44,31 @@ function abrirModal(html) {
 }
 
 async function cargar() {
-  cuentas = await api.get("/api/cuentas");
+  try { cuentas = await api.get("/api/cuentas"); }
+  catch (e) { document.getElementById("cuentas_resultado").textContent = e.message; return; }
+  document.getElementById("cuentas_total").textContent = cuentas.length;
+  document.getElementById("cuentas_activas").textContent = cuentas.filter(c => c.activo).length;
+  document.getElementById("cuentas_inactivas").textContent = cuentas.filter(c => !c.activo).length;
+  renderCuentas();
+}
+function renderCuentas() {
+  const buscar = document.getElementById("buscar_cuenta").value.trim().toLowerCase();
+  const filtro = document.getElementById("filtro_estado").value;
+  const visibles = cuentas.filter(c => `${c.username} ${c.nombre}`.toLowerCase().includes(buscar)
+    && (!filtro || c.activo === (filtro === "activa")));
+  document.getElementById("cuentas_cantidad").textContent = `${visibles.length} de ${cuentas.length} cuentas`;
   const tbody = document.getElementById("tabla");
   tbody.innerHTML = "";
-  if (!cuentas.length) { tbody.innerHTML = '<tr><td colspan="5">Sin cuentas</td></tr>'; return; }
-  cuentas.forEach((c) => {
+  if (!visibles.length) { tbody.innerHTML = '<tr><td colspan="5">No se encontraron cuentas</td></tr>'; return; }
+  visibles.forEach((c) => {
     const rol = ROL_LABEL[c.rol] || c.rol;
     const estado = c.activo ? "Activa" : "Inactiva";
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td>${c.username}</td><td>${c.nombre || ""}</td><td>${rol}</td>
-      <td>${estado}</td>
+    tr.innerHTML = `<td><span class="cuenta-avatar" aria-hidden="true">${esc(c.username.slice(0, 1).toUpperCase())}</span><strong>${esc(c.username)}</strong></td><td>${esc(c.nombre || "—")}</td><td><span class="cuenta-rol">${esc(rol)}</span></td>
+      <td><span class="cuenta-estado ${c.activo ? "activa" : "inactiva"}">${estado}</span></td>
       <td>
-        <button class="btn btn-azul" style="padding:6px 10px;min-height:auto" data-a="editar">Editar</button>
-        ${c.activo ? '<button class="btn btn-rojo" style="padding:6px 10px;min-height:auto" data-a="desactivar">Desactivar</button>' : ''}
+        <button class="cuenta-editar" data-a="editar">Editar</button>
+        ${c.activo ? '<button class="cuenta-desactivar" data-a="desactivar">Desactivar</button>' : ''}
       </td>`;
     tr.querySelector('[data-a=editar]').onclick = () => formCuenta(c);
     const bd = tr.querySelector('[data-a=desactivar]');
@@ -70,9 +93,9 @@ function formCuenta(c) {
   abrirModal(`
     <h3>${editando ? "Editar" : "Nueva"} cuenta</h3>
     <div class="row"><div style="flex:1"><label>Usuario *</label>
-      <input id="f_username" value="${editando ? c.username : ""}" ${editando ? "disabled" : ""}></div></div>
+      <input id="f_username" value="${editando ? esc(c.username) : ""}" ${editando ? "disabled" : ""}></div></div>
     <div class="row"><div style="flex:1"><label>Nombre</label>
-      <input id="f_nombre" value="${editando ? (c.nombre || "") : ""}"></div></div>
+      <input id="f_nombre" value="${editando ? esc(c.nombre || "") : ""}"></div></div>
     <div class="row"><div style="flex:1"><label>Rol</label>${selectRol(editando ? c.rol : "cajero")}</div></div>
     <div class="row"><div style="flex:1"><label>${editando ? "Nueva contraseña (dejar en blanco para no cambiar)" : "Contraseña *"}</label>
       <input id="f_password" type="password"></div></div>
@@ -112,6 +135,79 @@ async function desactivar(c) {
 }
 
 document.getElementById("btn_nueva").addEventListener("click", () => formCuenta(null));
+document.getElementById("buscar_cuenta").addEventListener("input", renderCuentas);
+document.getElementById("filtro_estado").addEventListener("change", renderCuentas);
+document.getElementById("btn_importar").addEventListener("click", () => {
+  abrirModal(`<h3>Importar cuentas desde Excel</h3>
+    <p>Crea hasta 500 cuentas en una sola carga. Primero revisaremos el archivo; después podrás confirmar.</p>
+    <a class="cuentas-plantilla" id="descargar_plantilla" href="/api/cuentas/plantilla">Descargar plantilla Excel ↗</a>
+    <p>Completa usuario, nombre, rol y contraseña en la hoja Cuentas. Las cuentas existentes no se reemplazan.</p>
+    <label for="archivo_cuentas">Archivo Excel (.xlsx)</label><input type="file" id="archivo_cuentas" accept=".xlsx">
+    <div id="importacion_resultado" role="status"></div>
+    <div class="row gap-top"><button class="btn btn-azul" id="validar_archivo">Revisar archivo</button><button class="btn btn-verde" id="confirmar_importacion" hidden>Crear cuentas</button><button class="btn btn-gris" id="cancelar_importacion">Cancelar</button></div>`);
+  const input = document.getElementById("archivo_cuentas");
+  const validar = document.getElementById("validar_archivo");
+  const confirmar = document.getElementById("confirmar_importacion");
+  const cancelar = document.getElementById("cancelar_importacion");
+  const resultado = document.getElementById("importacion_resultado");
+  document.getElementById("descargar_plantilla").onclick = async event => {
+    event.preventDefault();
+    const enlace = event.currentTarget;
+    if (enlace.getAttribute("aria-busy") === "true") return;
+    enlace.setAttribute("aria-busy", "true");
+    enlace.textContent = "Descargando plantilla…";
+    try {
+      const response = await fetch("/api/cuentas/plantilla");
+      api._checkAuth(response);
+      if (response.status === 404 || response.status === 405) {
+        throw new Error("El servidor aún no tiene cargada la importación de cuentas. Cierra la ventana del servidor, abre iniciar_servidor.bat desde esta carpeta y recarga la página.");
+      }
+      if (!response.ok) throw await api._err(response);
+      const url = URL.createObjectURL(await response.blob());
+      const download = document.createElement("a");
+      download.href = url;
+      download.download = "plantilla_cuentas.xlsx";
+      document.body.appendChild(download);
+      download.click();
+      download.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) { resultado.textContent = e.message; }
+    finally {
+      enlace.setAttribute("aria-busy", "false");
+      enlace.textContent = "Descargar plantilla Excel ↗";
+    }
+  };
+  let archivoValidado = null;
+  cancelar.onclick = cerrarModal;
+  input.onchange = () => { archivoValidado = null; confirmar.hidden = true; resultado.replaceChildren(); };
+  async function enviar(crear) {
+    const file = crear ? archivoValidado : input.files[0];
+    if (!file) { resultado.textContent = "Selecciona un archivo Excel."; return; }
+    validar.disabled = confirmar.disabled = cancelar.disabled = input.disabled = true;
+    resultado.textContent = crear ? "Creando cuentas…" : "Revisando archivo…";
+    try {
+      const form = new FormData(); form.append("archivo", file);
+      const response = await fetch(`/api/cuentas/importar?confirmar=${crear}`, { method: "POST", body: form });
+      api._checkAuth(response);
+      if (!response.ok) throw await api._err(response);
+      const res = await response.json();
+      if (crear && res.ok) {
+        cerrarModal();
+        document.getElementById("cuentas_resultado").innerHTML = `<div class="banner ok">${res.creadas} cuentas creadas correctamente.</div>`;
+        await cargar(); return;
+      }
+      archivoValidado = res.ok ? file : null;
+      confirmar.hidden = !res.ok;
+      confirmar.textContent = `Crear ${res.cuentas.length} cuentas`;
+      resultado.innerHTML = res.ok
+        ? `<p class="importacion-ok">${res.cuentas.length} cuentas listas para crear. Las contraseñas no se muestran.</p><div class="importacion-preview"><table><thead><tr><th>Usuario</th><th>Nombre</th><th>Rol</th></tr></thead><tbody>${res.cuentas.map(c => `<tr><td>${esc(c.usuario)}</td><td>${esc(c.nombre)}</td><td>${esc(ROL_LABEL[c.rol])}</td></tr>`).join("")}</tbody></table></div>`
+        : `<p>Corrige los errores y vuelve a cargar el archivo. No se creó ninguna cuenta.</p><ul class="importacion-errores">${res.errores.map(e => `<li>Fila ${e.fila} (${esc(e.usuario)}): ${esc(e.mensaje)}</li>`).join("")}</ul>`;
+    } catch (e) { archivoValidado = null; confirmar.hidden = true; resultado.textContent = e.message; }
+    finally { validar.disabled = confirmar.disabled = cancelar.disabled = input.disabled = false; }
+  }
+  validar.onclick = () => enviar(false);
+  confirmar.onclick = () => enviar(true);
+});
 cargar();
 </script>
 {% endblock %}

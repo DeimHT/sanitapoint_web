@@ -58,11 +58,12 @@ def _asegurar_columnas():
     if not settings.database_url.startswith("sqlite"):
         return
     nuevas = {"cajas": {
+        "servicio": "VARCHAR",
         "nro_apertura": "INTEGER", "nro_cierre": "INTEGER",
         "torniquete_bano_inicial": "INTEGER", "torniquete_ducha_inicial": "INTEGER",
         "cuenta_id": "INTEGER REFERENCES cuentas(id)",
         "torniquete_bano_final": "INTEGER", "torniquete_ducha_final": "INTEGER",
-    }, "ventas": {"tipo_acceso": "VARCHAR"}}
+    }, "ventas": {"tipo_acceso": "VARCHAR", "kame_documento_id": "VARCHAR"}}
     insp = inspect(engine)
     with engine.begin() as conn:
         for tabla, columnas in nuevas.items():

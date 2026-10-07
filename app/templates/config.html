@@ -1,17 +1,31 @@
 {% extends "base.html" %}
 {% block title %}Configuración – SanitaPoint{% endblock %}
+{% block extra_head %}<script src="/static/js/cedula.js?v=1"></script>{% endblock %}
 {% block content %}
-
-<div class="card">
-  <h3>Empresa</h3>
+<div class="configuracion-pagina">
+<div class="configuracion-portada">
+  <span class="configuracion-eyebrow">AJUSTES DEL SISTEMA</span>
+  <h1>Configuración</h1>
+  <p>Personaliza los datos de tu negocio, la impresión y las tarifas.</p>
+  <nav class="configuracion-indice" aria-label="Secciones de configuración">
+    <a href="#config_empresa">Empresa</a><a href="#config_impresora">Impresión</a><a href="#config_lector">Lector de cédulas</a><a href="#config_tarifas">Tarifas</a><a href="#config_pases">Pases libres</a><a href="#config_kame">KAME</a>
+  </nav>
+</div>
+<div class="card configuracion-seccion" id="config_empresa">
+  <div class="configuracion-titulo"><span aria-hidden="true">01</span><div><h3>Datos de la empresa</h3><p>Información que aparece en tus tickets y comprobantes.</p></div></div>
+  <div class="configuracion-empresa-campos">
   <div class="row"><div style="flex:1"><label>Nombre</label><input id="empresa_nombre"></div></div>
   <div class="row gap-top"><div style="flex:1"><label>RUT</label><input id="empresa_rut"></div></div>
   <div class="row gap-top"><div style="flex:1"><label>Dirección</label><input id="empresa_direccion"></div></div>
+  <div class="row gap-top"><div style="flex:1"><label for="empresa_giro">Giro comercial</label><input id="empresa_giro"></div></div>
+  <div class="row gap-top"><div style="flex:1"><label for="empresa_ciudad">Ciudad</label><input id="empresa_ciudad"></div></div>
+  <div class="row gap-top"><div style="flex:1"><label for="empresa_oficina_sii">Oficina SII</label><input id="empresa_oficina_sii"></div></div>
   <div class="row gap-top"><div style="flex:1"><label>Teléfono</label><input id="empresa_telefono"></div></div>
+  </div>
 </div>
 
-<div class="card">
-  <h3>Integración KAME</h3>
+<div class="card configuracion-seccion" id="config_kame">
+  <div class="configuracion-titulo"><span aria-hidden="true">02</span><div><h3>Integración KAME</h3><p>Comprueba la conexión para la emisión de boletas.</p></div></div>
   <p style="color:var(--gris);font-size:12px">
     La integración KAME se configura exclusivamente en el archivo <code>.env</code> del servidor.
     La prueba valida las credenciales OAuth sin emitir una boleta.
@@ -20,8 +34,16 @@
   <div id="resultado_kame"></div>
 </div>
 
-<div class="card">
-  <h3>Ticket e impresora térmica</h3>
+<div class="card configuracion-seccion" id="config_impresora">
+  <div class="configuracion-titulo"><span aria-hidden="true">03</span><div><h3>Tickets e impresión</h3><p>Selecciona tu impresora y elige cuándo imprimir las boletas.</p></div></div>
+  <div class="row gap-top">
+    <div><label for="impresora_detectada">Impresoras del computador principal</label><br>
+      <select id="impresora_detectada"><option value="">Seleccionar impresora…</option></select>
+    </div>
+    <button class="btn btn-azul" type="button" id="btn_detectar_impresoras">Actualizar lista</button>
+  </div>
+  <div id="estado_deteccion" role="status"></div>
+  <input id="impresora_nombre" type="hidden">
   <div class="row"><div style="flex:1"><label>Pie del ticket</label><input id="ticket_pie"></div></div>
   <div class="row gap-top">
     <div><label>Tipo de impresora</label><br>
@@ -29,29 +51,50 @@
         <option value="ninguna">Ninguna (solo PDF)</option>
         <option value="red">Red (ESC/POS)</option>
         <option value="usb">USB (ESC/POS)</option>
+        <option value="windows">Impresora instalada en Windows</option>
       </select>
     </div>
     <div><label>IP (red)</label><br><input id="impresora_ip"></div>
     <div><label>Puerto (red)</label><br><input id="impresora_puerto"></div>
+    <div><label for="impresora_usb_vendor">VID (USB, hexadecimal)</label><br><input id="impresora_usb_vendor" placeholder="0x..."></div>
+    <div><label for="impresora_usb_product">PID (USB, hexadecimal)</label><br><input id="impresora_usb_product" placeholder="0x..."></div>
+    <div><label for="impresora_automatica">Impresión al registrar venta</label><br>
+      <select id="impresora_automatica"><option value="0">Solo con botón Imprimir boleta</option><option value="1">Automática</option></select>
+    </div>
   </div>
+  <p>Conecta y enciende la R200 en el computador principal y selecciónala en la lista. Si aparece instalada en Windows, elige esa opción. USB directo completa los identificadores automáticamente, pero puede necesitar un controlador compatible. La lista incluye otras impresoras: elige una térmica compatible con ESC/POS.</p>
+  <button class="btn btn-azul" id="btn_probar_impresora" type="button">Imprimir prueba</button>
+  <div id="resultado_impresora" role="status"></div>
 </div>
 
-<div class="card">
-  <h3>Pases libres</h3>
-  <div class="row"><div><label>Pases máximos por usuario/día</label><br><input id="pases_por_dia" type="number"></div></div>
+<div class="card configuracion-seccion" id="config_lector">
+  <div class="configuracion-titulo"><span aria-hidden="true">QR</span><div><h3>Lector de cédulas</h3><p>Registro de personas con pase libre mediante una pistola USB.</p></div></div>
+  <div class="row"><div><label for="lector_modo">Modo de lectura</label><select id="lector_modo"><option value="teclado">USB teclado (HID)</option><option value="ninguno">Desactivado</option></select></div>
+    <div><label for="lector_dispositivo">Dispositivo de referencia</label><select id="lector_dispositivo"><option value="">USB teclado genérico</option></select></div>
+    <button type="button" class="btn btn-azul" id="detectar_lectores">Actualizar lectores</button></div>
+  <input id="lector_nombre" type="hidden">
+  <p class="configuracion-ayuda">La lista muestra candidatos conectados al computador principal y puede incluir teclados normales. La selección guarda una referencia; en modo teclado el navegador recibe las teclas del campo activo, sin distinguir qué dispositivo las envía. Conecta la pistola al equipo donde usarás Pases libres y configúrala para leer QR y terminar con Enter.</p>
+  <div id="estado_lector" role="status"></div>
+  <div class="row gap-top"><div><label for="prueba_lector">Prueba de lectura</label><input id="prueba_lector" placeholder="Haz clic aquí y escanea, o pega una lectura" maxlength="8192" autocomplete="off"></div><button type="button" class="btn btn-azul" id="probar_lector">Revisar lectura</button></div>
+  <div id="resultado_lector" role="status"></div>
+</div>
+<div class="card configuracion-seccion" id="config_pases">
+  <div class="configuracion-titulo"><span aria-hidden="true">04</span><div><h3>Pases libres</h3><p>Define cuántos accesos gratuitos puede usar cada persona.</p></div></div>
+  <div class="row"><div><label for="pases_por_dia">Pases máximos por usuario/día</label><br><input id="pases_por_dia" type="number" min="0" step="1" aria-describedby="ayuda_pases"><p id="ayuda_pases" class="configuracion-ayuda">0 = sin límite de pases libres. Un valor mayor que 0 establece el máximo diario por persona.</p></div></div>
 </div>
 
-<div class="card">
-  <h3>Tarifas de servicios</h3>
+<div class="card configuracion-seccion" id="config_tarifas">
+  <div class="configuracion-titulo"><span aria-hidden="true">05</span><div><h3>Tarifas de servicios</h3><p>Precios de venta en pesos chilenos.</p></div></div>
   <div id="servicios_form"></div>
 </div>
 
-<button class="btn btn-verde" id="btn_guardar">💾 Guardar configuración</button>
-<div id="resultado"></div>
+<div class="configuracion-guardar"><div><strong>Guardar tus ajustes</strong><p>Aplica los cambios de esta página.</p></div><button class="btn btn-verde" id="btn_guardar">Guardar cambios</button></div>
+<div id="resultado" role="status"></div>
+</div>
 
 <script>
-const CLAVES = ["empresa_nombre","empresa_rut","empresa_direccion","empresa_telefono",
-  "ticket_pie","impresora_tipo","impresora_ip","impresora_puerto","pases_por_dia"];
+const CLAVES = ["empresa_nombre","empresa_rut","empresa_direccion","empresa_telefono","empresa_giro","empresa_ciudad","empresa_oficina_sii",
+  "ticket_pie","impresora_tipo","impresora_nombre","impresora_ip","impresora_puerto","impresora_usb_vendor","impresora_usb_product","impresora_automatica","pases_por_dia","lector_modo","lector_dispositivo","lector_nombre"];
 
 let servicios = [];
 
@@ -59,8 +102,11 @@ async function cargar() {
   const cfg = await api.get("/api/config");
   CLAVES.forEach((k) => {
     const el = document.getElementById(k);
-    if (el) el.value = cfg[k] || "";
+    if (k === "lector_dispositivo" && cfg[k]) el.add(new Option(cfg.lector_nombre || "Lector guardado", cfg[k]));
+    if (el) el.value = cfg[k] ?? (k === "lector_modo" ? "teclado" : k === "impresora_automatica" ? "1" : k === "impresora_puerto" ? "9100" : k === "impresora_tipo" ? "ninguna" : "");
   });
+  actualizarCamposImpresora();
+  detectarImpresoras();
   servicios = await api.get("/api/servicios");
   const cont = document.getElementById("servicios_form");
   cont.innerHTML = "";
@@ -108,6 +154,93 @@ document.getElementById("btn_probar_kame").addEventListener("click", async () =>
   }
 });
 
+document.getElementById("btn_probar_impresora").addEventListener("click", async () => {
+  const btn = document.getElementById("btn_probar_impresora");
+  const resultado = document.getElementById("resultado_impresora");
+  btn.disabled = true;
+  resultado.textContent = "Guardando ajustes y enviando prueba...";
+  try {
+    const valores = {};
+    CLAVES.filter(k => k.startsWith("impresora_") || k === "ticket_pie").forEach(k => valores[k] = document.getElementById(k).value);
+    await api.put("/api/config", { valores });
+    const res = await api.post("/api/config/impresora/test", {});
+    resultado.textContent = res.mensaje;
+  } catch (e) { resultado.textContent = errorImpresora(e); }
+  finally { btn.disabled = false; }
+});
+function errorImpresora(e) {
+  return e.message === "Not Found" ? "El servidor no tiene cargadas las funciones de impresión. Cierra la ventana del servidor, vuelve a abrir iniciar_servidor.bat y recarga esta página." : e.message;
+}
+let impresorasDetectadas = [];
+function actualizarCamposImpresora() {
+  const tipo = document.getElementById("impresora_tipo").value;
+  ["impresora_ip", "impresora_puerto"].forEach(k => document.getElementById(k).parentElement.hidden = tipo !== "red");
+  ["impresora_usb_vendor", "impresora_usb_product"].forEach(k => document.getElementById(k).parentElement.hidden = tipo !== "usb");
+}
+async function detectarImpresoras() {
+  const btn = document.getElementById("btn_detectar_impresoras");
+  const estado = document.getElementById("estado_deteccion");
+  const select = document.getElementById("impresora_detectada");
+  btn.disabled = true;
+  estado.textContent = "Buscando impresoras…";
+  try {
+    const res = await api.get("/api/config/impresoras");
+    impresorasDetectadas = res.impresoras;
+    select.replaceChildren(new Option("Seleccionar impresora…", ""));
+    impresorasDetectadas.forEach(p => select.add(new Option(p.nombre, p.id)));
+    const tipo = document.getElementById("impresora_tipo").value;
+    const actual = impresorasDetectadas.find(p => p.tipo === tipo && (tipo === "windows"
+      ? p.nombre_windows === document.getElementById("impresora_nombre").value
+      : p.vendor === document.getElementById("impresora_usb_vendor").value.toLowerCase() && p.product === document.getElementById("impresora_usb_product").value.toLowerCase()));
+    if (actual) select.value = actual.id;
+    estado.textContent = res.mensaje || (impresorasDetectadas.length ? "Selecciona tu impresora y pulsa Imprimir prueba." : "No se encontraron impresoras. Comprueba la conexión, el encendido y el controlador.");
+  } catch (e) { estado.textContent = errorImpresora(e); }
+  finally { btn.disabled = false; }
+}
+document.getElementById("impresora_detectada").addEventListener("change", e => {
+  const p = impresorasDetectadas.find(p => p.id === e.target.value);
+  if (!p) return;
+  document.getElementById("impresora_tipo").value = p.tipo;
+  document.getElementById("impresora_nombre").value = p.nombre_windows || "";
+  if (p.tipo === "usb") {
+    document.getElementById("impresora_usb_vendor").value = p.vendor;
+    document.getElementById("impresora_usb_product").value = p.product;
+  }
+  actualizarCamposImpresora();
+});
+document.getElementById("detectar_lectores").onclick = async function () {
+  this.disabled = true;
+  const estado = document.getElementById("estado_lector");
+  estado.textContent = "Buscando lectores…";
+  try {
+    const res = await api.get("/api/config/lectores");
+    const select = document.getElementById("lector_dispositivo");
+    const selected = select.value;
+    const nombre = document.getElementById("lector_nombre").value;
+    select.replaceChildren(new Option("USB teclado genérico", ""));
+    res.lectores.forEach(d => select.add(new Option(d.nombre, d.id)));
+    if (selected && !res.lectores.some(d => d.id === selected)) select.add(new Option((nombre || "Lector guardado") + " (no detectado)", selected));
+    select.value = selected;
+    estado.textContent = res.mensaje || "Selecciona un dispositivo y prueba una lectura.";
+  } catch (e) { estado.textContent = e.message; }
+  finally { this.disabled = false; }
+};
+document.getElementById("lector_dispositivo").onchange = function () {
+  document.getElementById("lector_nombre").value = this.selectedOptions[0].textContent;
+};
+function probarLector() {
+  const input = document.getElementById("prueba_lector");
+  const resultado = document.getElementById("resultado_lector");
+  try {
+    const datos = leerCedula(input.value);
+    resultado.textContent = `Lectura correcta: ${datos.rut}. ${datos.nombre || "El QR no trae nombre; deberás completarlo manualmente."} No se registró ninguna persona.`;
+    input.value = "";
+  } catch (e) { resultado.textContent = e.message; }
+}
+document.getElementById("probar_lector").onclick = probarLector;
+document.getElementById("prueba_lector").onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); probarLector(); } };
+document.getElementById("impresora_tipo").addEventListener("change", actualizarCamposImpresora);
+document.getElementById("btn_detectar_impresoras").addEventListener("click", detectarImpresoras);
 cargar();
 </script>
 {% endblock %}

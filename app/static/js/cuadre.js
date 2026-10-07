@@ -22,6 +22,6 @@ function renderCuadre(c) {
     `</tbody></table><p>Una diferencia negativa indica faltante; positiva, sobrante. Los pagos electrónicos no se suman al efectivo.</p>` +
     `<h3>Cuadre de torniquetes</h3><div style="overflow-x:auto"><table><thead><tr>` +
     `<th>Servicio</th><th>Inicial</th><th>Final</th><th>Personas</th><th>Ventas</th><th>Pases gratuitos</th><th>Contador interno</th><th>Diferencia</th>` +
-    `</tr></thead><tbody>${torniquete("bano", "Baño")}${torniquete("ducha", "Ducha")}</tbody></table></div>` +
+    `</tr></thead><tbody>${torniquete("bano", "Baño")}${c.servicio === "Ba\u00f1o 2" ? "" : torniquete("ducha", "Ducha")}</tbody></table></div>` +
     `<p>Personas = final − inicial. Diferencia = personas − contador interno. Un valor positivo indica más pasos que accesos registrados. “—” indica que aún no hay lectura o que falta en un turno antiguo.</p>`;
 }

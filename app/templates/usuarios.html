@@ -1,10 +1,14 @@
 {% extends "base.html" %}
-{% block title %}Usuarios – SanitaPoint{% endblock %}
+{% block title %}Pases libres – SanitaPoint{% endblock %}
+{% block extra_head %}<script src="/static/js/cedula.js?v=1"></script>{% endblock %}
 {% block content %}
 <div class="card">
+  <h2>Pases libres</h2>
+  <p class="configuracion-ayuda">Registra las personas autorizadas para usar pases libres y consulta sus accesos.</p>
   <div class="row">
     <input id="buscar" placeholder="Buscar por nombre o RUT…" style="flex:1;min-width:200px">
-    <button class="btn btn-verde" id="btn_nuevo">➕ Nuevo usuario</button>
+    <button class="btn btn-verde" id="btn_nuevo">+ Ingresar datos</button>
+    <button class="btn btn-azul" id="btn_escanear">Escanear cédula</button>
   </div>
 </div>
 
@@ -19,6 +23,9 @@
 
 <script>
 let usuarios = [];
+function esc(valor) {
+  return String(valor ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"}[c]));
+}
 
 function cerrarModal() { document.getElementById("modal").classList.add("hidden"); }
 function abrirModal(html) {
@@ -37,10 +44,10 @@ async function render(lista) {
   for (const u of lista) {
     const check = await api.get(`/api/usuarios/${u.id}/pases/check`);
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td>${u.id}</td><td>${u.nombre}</td><td>${u.rut || ""}</td>
-      <td>${u.telefono || ""}</td><td>${u.tipo}</td>
+    tr.innerHTML = `<td>${u.id}</td><td>${esc(u.nombre)}</td><td>${esc(u.rut || "")}</td>
+      <td>${esc(u.telefono || "")}</td><td>${u.tipo === "cliente" ? "Beneficiario" : esc(u.tipo)}</td>
       <td>${new Date(u.fecha_registro).toLocaleDateString("es-CL")}</td>
-      <td>${check.usados}/${check.maximo}</td>
+      <td>${check.usados} / ${check.maximo === 0 ? "Sin límite" : check.maximo}</td>
       <td>
         <button class="btn btn-azul" style="padding:6px 10px;min-height:auto" data-a="editar">Editar</button>
         <button class="btn btn-rojo" style="padding:6px 10px;min-height:auto" data-a="desactivar">Desactivar</button>
@@ -58,20 +65,21 @@ document.getElementById("buscar").addEventListener("input", (e) => {
   render(usuarios.filter((u) => u.nombre.toLowerCase().includes(t) || (u.rut || "").toLowerCase().includes(t)));
 });
 
-function formUsuario(u) {
+function formUsuario(u, lectura = null) {
   abrirModal(`
-    <h3>${u ? "Editar" : "Nuevo"} usuario</h3>
-    <div class="row"><div style="flex:1"><label>Nombre *</label><input id="f_nombre" value="${u ? u.nombre : ""}"></div></div>
-    <div class="row"><div style="flex:1"><label>RUT *</label><input id="f_rut" value="${u ? (u.rut || "") : ""}"></div></div>
-    <div class="row"><div style="flex:1"><label>Teléfono</label><input id="f_tel" value="${u ? (u.telefono || "") : ""}"></div></div>
-    <div class="row"><div style="flex:1"><label>Email</label><input id="f_email" value="${u ? (u.email || "") : ""}"></div></div>
+    <h3>${u ? "Editar persona" : "Registrar persona con pase libre"}</h3>
+    ${lectura ? '<p class="configuracion-ayuda">Lectura recibida. Revisa el RUT y completa el nombre si no viene en el QR antes de guardar.</p>' : ""}
+    <div class="row"><div style="flex:1"><label>Nombre *</label><input id="f_nombre" value="${esc(u?.nombre || lectura?.nombre || "")}"></div></div>
+    <div class="row"><div style="flex:1"><label>RUT *</label><input id="f_rut" value="${esc(u?.rut || lectura?.rut || "")}"></div></div>
+    <div class="row"><div style="flex:1"><label>Teléfono</label><input id="f_tel" value="${esc(u?.telefono || "")}"></div></div>
+    <div class="row"><div style="flex:1"><label>Email</label><input id="f_email" value="${esc(u?.email || "")}"></div></div>
     <div class="row"><div style="flex:1"><label>Tipo</label>
       <select id="f_tipo">
-        <option value="cliente" ${u && u.tipo === "cliente" ? "selected" : ""}>cliente</option>
+        <option value="cliente" ${u && u.tipo === "cliente" ? "selected" : ""}>Beneficiario</option>
         <option value="empleado" ${u && u.tipo === "empleado" ? "selected" : ""}>empleado</option>
         <option value="vip" ${u && u.tipo === "vip" ? "selected" : ""}>vip</option>
       </select></div></div>
-    <div class="row"><div style="flex:1"><label>Notas</label><input id="f_notas" value="${u ? (u.notas || "") : ""}"></div></div>
+    <div class="row"><div style="flex:1"><label>Notas</label><input id="f_notas" value="${esc(u?.notas || "")}"></div></div>
     <div class="row gap-top">
       <button class="btn btn-verde" id="ok">Guardar</button>
       <button class="btn btn-gris" onclick="cerrarModal()">Cancelar</button>
@@ -86,11 +94,15 @@ function formUsuario(u) {
       notas: document.getElementById("f_notas").value.trim(),
     };
     if (!body.nombre || !body.rut) { alert("Nombre y RUT son obligatorios"); return; }
+    const boton = document.getElementById("ok");
+    if (boton.disabled) return;
+    boton.disabled = true;
     try {
       if (u) await api.put(`/api/usuarios/${u.id}`, body);
       else await api.post("/api/usuarios", body);
       cerrarModal(); cargar();
     } catch (e) { alert(e.message); }
+    finally { boton.disabled = false; }
   };
 }
 
@@ -113,6 +125,31 @@ async function verPases(u) {
 }
 
 document.getElementById("btn_nuevo").addEventListener("click", () => formUsuario(null));
+document.getElementById("btn_escanear").addEventListener("click", async () => {
+  let config;
+  try { config = await api.get("/api/usuarios/lector/config"); }
+  catch (e) { alert(e.message); return; }
+  if (config.modo === "ninguno") { alert("Activa el lector USB teclado en Configuración para usar esta opción."); return; }
+  abrirModal(`<h3>Escanear cédula de identidad</h3>
+    <p>Haz clic en el campo y escanea el QR. El lector debe funcionar como teclado USB. Puedes pegar una lectura para probar sin pistola.</p>
+    <label for="lectura_cedula">Contenido del QR</label><textarea id="lectura_cedula" rows="3" maxlength="8192" style="width:100%" autocomplete="off" spellcheck="false"></textarea>
+    <p class="configuracion-ayuda">No se abre el enlace del QR ni se verifica la identidad en Registro Civil. Solo se completan los datos que contiene la lectura.</p>
+    <div id="lectura_resultado" role="status"></div>
+    <div class="row gap-top"><button class="btn btn-verde" id="procesar_cedula">Revisar datos</button><button class="btn btn-gris" onclick="cerrarModal()">Cancelar</button></div>`);
+  const input = document.getElementById("lectura_cedula");
+  function procesar() {
+    try {
+      const lectura = leerCedula(input.value);
+      input.value = "";
+      const existente = usuarios.find(u => (u.rut || "").replace(/\./g, "").replace(/\s/g, "").toUpperCase() === lectura.rut);
+      if (existente) { formUsuario(existente); return; }
+      formUsuario(null, lectura);
+    } catch (e) { document.getElementById("lectura_resultado").textContent = e.message; }
+  }
+  input.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); procesar(); } });
+  document.getElementById("procesar_cedula").onclick = procesar;
+  input.focus();
+});
 cargar();
 </script>
 {% endblock %}

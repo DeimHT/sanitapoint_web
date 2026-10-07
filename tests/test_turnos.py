@@ -24,6 +24,63 @@ from app.security import hash_password
 
 
 class TurnosTests(unittest.TestCase):
+    def test_free_pass_updates_counts_without_boleta_pdf_or_print(self):
+        from app.routers.ventas import descargar_ticket_pdf, imprimir_boleta
+        with patch("app.routers.ventas.ticket_printer.emitir_ticket") as ticket, \
+                patch("app.routers.ventas.emitir_boleta") as kame:
+            venta = self.vender(self.a, self.bano, pase=True)
+            ticket.assert_not_called()
+            kame.assert_not_called()
+        resumen = resumen_caja(self.db, self.db.get(Caja, self.ca.id))
+        self.assertEqual(resumen.pases_bano, 1)
+        self.assertEqual(resumen.contador_bano, 1)
+        self.assertEqual(resumen.total_ventas, 0)
+        self.assertEqual(resumen.ventas_efectivo, 0)
+        self.assertIsNone(venta.folio_kame)
+        for action in (descargar_ticket_pdf, imprimir_boleta):
+            with self.assertRaises(HTTPException) as error:
+                action(venta.ticket, self.db)
+            self.assertEqual(error.exception.status_code, 400)
+
+    def test_zero_pass_limit_is_unlimited_in_check_and_sale(self):
+        from app.routers.usuarios import check_pase
+        from app.services.config_store import set_config
+        set_config(self.db, "pases_por_dia", "0")
+        for _ in range(3):
+            self.assertTrue(check_pase(self.cliente.id, self.db)["disponible"])
+            self.vender(self.a, self.bano, pase=True)
+        result = check_pase(self.cliente.id, self.db)
+        self.assertEqual(result["usados"], 3)
+        self.assertEqual(result["maximo"], 0)
+        self.assertTrue(result["disponible"])
+
+    def test_positive_pass_limit_still_blocks(self):
+        from app.routers.usuarios import check_pase
+        from app.services.config_store import set_config
+        set_config(self.db, "pases_por_dia", "1")
+        self.vender(self.a, self.bano, pase=True)
+        self.assertFalse(check_pase(self.cliente.id, self.db)["disponible"])
+        with self.assertRaises(HTTPException):
+            self.vender(self.a, self.bano, pase=True)
+
+    def test_payment_options_and_cards_do_not_increase_cash(self):
+        from app.services.reportes import _totales
+        with self.assertRaises(ValidationError):
+            VentaIn(servicio_id=self.bano.id, forma_pago="transferencia")
+        self.vender(self.a, self.bano, "tarjetas")
+        resumen = resumen_caja(self.db, self.db.get(Caja, self.ca.id))
+        self.assertEqual(resumen.saldo_esperado, 10000)
+        self.assertEqual(resumen.ventas_efectivo, 0)
+        self.assertEqual(_totales(self.db.query(Venta).all())["tarjetas"], 500)
+
+    def test_bano_2_rejects_shower_sale(self):
+        caja = self.db.get(Caja, self.ca.id)
+        caja.servicio = "Baño 2"
+        self.db.commit()
+        with self.assertRaises(HTTPException):
+            self.vender(self.a, self.ducha)
+        self.assertEqual(self.db.query(Venta).count(), 0)
+
     def setUp(self):
         temporal = tempfile.TemporaryDirectory()
         self.addCleanup(temporal.cleanup)
@@ -68,7 +125,7 @@ class TurnosTests(unittest.TestCase):
         self.assertEqual(self.ca.saldo_esperado, 10000)
         self.vender(self.a, self.bano)
         self.vender(self.a, self.bano, pase=True)
-        self.vender(self.a, self.ducha, "transferencia")
+        self.vender(self.a, self.ducha, "tarjetas")
         self.vender(self.b, self.ducha)
         a = obtener_caja_abierta(self.db, self.a)
         b = obtener_caja_abierta(self.db, self.b)
@@ -83,9 +140,9 @@ class TurnosTests(unittest.TestCase):
     def test_cuadre_con_efectivo_transferencia_pases_y_retiros(self):
         self.vender(self.a, self.bano)
         self.vender(self.a, self.ducha)
-        self.vender(self.a, self.bano, "transferencia")
-        self.vender(self.a, self.ducha, "transferencia")
-        self.vender(self.a, self.ducha, "transferencia")
+        self.vender(self.a, self.bano, "tarjetas")
+        self.vender(self.a, self.ducha, "tarjetas")
+        self.vender(self.a, self.ducha, "tarjetas")
         self.vender(self.a, self.bano, pase=True)
         registrar_movimiento(MovimientoIn(tipo="retiro", monto=1000, caja_id=self.ca.id),
                              self.db, self.supervisor)
@@ -125,11 +182,12 @@ class TurnosTests(unittest.TestCase):
     def test_validacion_de_cierre_y_retiro(self):
         base = dict(saldo_final=0, torniquete_bano_final=0, torniquete_ducha_final=0)
         for campo in base:
-            for valor in (-1, 0.5, None):
+            for valor in (-1, 0.5) + (() if campo == "torniquete_ducha_final" else (None,)):
                 with self.assertRaises(ValidationError):
                     CerrarCajaIn(**{**base, campo: valor})
-            with self.assertRaises(ValidationError):
-                CerrarCajaIn(**{k: v for k, v in base.items() if k != campo})
+            if campo != "torniquete_ducha_final":
+                with self.assertRaises(ValidationError):
+                    CerrarCajaIn(**{k: v for k, v in base.items() if k != campo})
         for monto in (-1, 0):
             with self.assertRaises(ValidationError):
                 MovimientoIn(tipo="retiro", monto=monto)

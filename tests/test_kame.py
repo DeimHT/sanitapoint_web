@@ -5,7 +5,7 @@ from unittest.mock import patch, Mock
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from app.database import Base
-from app.models import Configuracion
+from app.models import Configuracion, Venta
 from app.services.kame_client import KameAPI, emitir_boleta
 from app.routers.config import guardar_config, probar_kame
 from app.schemas import ConfigIn
@@ -18,6 +18,17 @@ def response(data, status=200):
 
 
 class KameTests(unittest.TestCase):
+    @patch('app.services.kame_client.requests.post')
+    def test_document_id_is_kept_for_future_document_download(self, post):
+        self.configure(modo='real', token='token', user='cashier@example.com')
+        venta = Venta(ticket='T000001', servicio_nombre='Ducha', monto=2000, forma_pago='debito')
+        self.db.add(venta)
+        self.db.commit()
+        post.return_value = response({'Estado': 'OK', 'Folio': 456, 'Id': 'document-123'})
+        self.assertEqual(self.emit(), ('456', 'ok'))
+        self.db.refresh(venta)
+        self.assertEqual(venta.kame_documento_id, 'document-123')
+
     def setUp(self):
         self.engine = create_engine('sqlite://')
         Base.metadata.create_all(self.engine)

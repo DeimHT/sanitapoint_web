@@ -41,6 +41,24 @@ if not exist ".venv\Scripts\python.exe" (
 )
 
 REM --- 3. Mostrar la direccion para las cajas ---------------------------
+python -c "import usb.core; import libusb_package; assert libusb_package.get_libusb1_backend() is not None" >nul 2>nul
+if errorlevel 1 (
+  echo Instalando soporte de impresoras USB...
+  python -m pip install "pyusb>=1.2" "libusb-package>=1.0.26"
+  if errorlevel 1 (
+    echo [AVISO] No se pudo instalar el soporte USB. Revisa la conexion a internet.
+  )
+)
+
+python -c "import win32print" >nul 2>nul
+if errorlevel 1 (
+  echo Instalando soporte de impresoras Windows...
+  python -m pip install "pywin32>=306"
+  if errorlevel 1 (
+    echo [AVISO] No se pudo instalar el soporte Windows. Revisa la conexion a internet.
+  )
+)
+
 echo.
 echo ------------------------------------------------------------
 echo  Las CAJAS deben abrir en su navegador una de estas URL:

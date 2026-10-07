@@ -32,6 +32,8 @@ def registrar_venta(body: VentaIn, db: Session = Depends(get_db),
         raise HTTPException(404, "Servicio no encontrado")
 
     tipo = tipo_acceso(servicio.nombre)
+    if caja.servicio == "Baño 2" and tipo == "ducha":
+        raise HTTPException(400, "Baño 2 no tiene servicio de duchas")
     if tipo is None:
         raise HTTPException(400, "El servicio debe corresponder a baño o ducha")
     if body.es_pase_libre and tipo != "bano":
@@ -48,7 +50,7 @@ def registrar_venta(body: VentaIn, db: Session = Depends(get_db),
         from app.routers.usuarios import _pases_usados_hoy, _max_pases_dia
         usados = _pases_usados_hoy(db, usuario.id)
         maximo = _max_pases_dia(db)
-        if usados >= maximo:
+        if maximo != 0 and usados >= maximo:
             raise HTTPException(
                 400, f"{usuario.nombre} ya usó {usados} pase(s) libre(s) hoy (límite: {maximo})"
             )
@@ -76,6 +78,11 @@ def registrar_venta(body: VentaIn, db: Session = Depends(get_db),
     db.commit()
     db.refresh(venta)
 
+    if venta.es_pase_libre:
+        out = VentaOut.model_validate(venta)
+        out.detalle_impresion = "Pase libre registrado sin boleta ni impresión"
+        return out
+
     # La venta y su acceso ya están confirmados. No mantener bloqueada la caja
     # durante la llamada externa a KAME: otros usuarios pueden seguir atendiendo.
     folio_kame, estado_kame = (None, "omitido")
@@ -91,6 +98,7 @@ def registrar_venta(body: VentaIn, db: Session = Depends(get_db),
     resultado_impresion = ticket_printer.emitir_ticket(
         db, venta.ticket, venta.servicio_nombre, venta.monto, venta.forma_pago,
         venta.folio_kame, venta.estado_kame, venta.rut_cliente, venta.es_pase_libre,
+        creado_en=venta.creado_en, servicio_codigo=venta.servicio_id,
     )
 
     out = VentaOut.model_validate(venta)
@@ -112,10 +120,31 @@ def descargar_ticket_pdf(ticket: str, db: Session = Depends(get_db)):
     venta = db.query(Venta).filter(Venta.ticket == ticket).first()
     if not venta:
         raise HTTPException(404, "Ticket no encontrado")
+    if venta.es_pase_libre:
+        raise HTTPException(400, "Los pases libres no generan boleta ni PDF")
     path = ticket_printer.generar_ticket_pdf(
         db, venta.ticket, venta.servicio_nombre, venta.monto, venta.forma_pago,
         venta.folio_kame, venta.estado_kame, venta.rut_cliente, venta.es_pase_libre,
         creado_en=venta.creado_en,
+        servicio_codigo=venta.servicio_id,
     )
     return FileResponse(path, media_type="application/pdf", filename=f"{ticket}.pdf",
                         headers={"Cache-Control": "no-store"})
+
+
+@router.post("/{ticket}/imprimir", dependencies=[Depends(require_cap(EMITIR_BOLETAS))])
+def imprimir_boleta(ticket: str, db: Session = Depends(get_db)):
+    """Imprime una venta existente sin volver a cobrar ni emitir en KAME."""
+    venta = db.query(Venta).filter(Venta.ticket == ticket).first()
+    if not venta:
+        raise HTTPException(404, "Ticket no encontrado")
+    if venta.es_pase_libre:
+        raise HTTPException(400, "Los pases libres no generan boleta ni impresión")
+    ok, mensaje = ticket_printer.imprimir_escpos(
+        db, ticket_num=venta.ticket, servicio_nombre=venta.servicio_nombre,
+        monto=venta.monto, forma_pago=venta.forma_pago, folio_kame=venta.folio_kame,
+        estado_kame=venta.estado_kame, rut_cliente=venta.rut_cliente,
+        es_pase_libre=venta.es_pase_libre, creado_en=venta.creado_en,
+        servicio_codigo=venta.servicio_id,
+    )
+    return {"ok": ok, "mensaje": "Ticket enviado a la impresora." if ok else mensaje}

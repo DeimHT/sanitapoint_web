@@ -1,0 +1,10 @@
+const assert = require('node:assert/strict');
+const { leerCedula } = require('../app/static/js/cedula.js');
+assert.deepEqual(leerCedula('https://example.test/?RUN=12345678-5&name=Persona%20Prueba'), { rut: '12345678-5', nombre: 'Persona Prueba' });
+assert.deepEqual(leerCedula('https://example.test/?RUN=12345678-5'), { rut: '12345678-5', nombre: '' });
+assert.deepEqual(leerCedula('{"rut":"12.345.678-5","nombre":"Persona"}'), { rut: '12345678-5', nombre: 'Persona' });
+assert.throws(() => leerCedula('https://example.test/solo-verificacion'), /manual/);
+assert.throws(() => leerCedula('12345678-0'), /verificador/);
+assert.throws(() => leerCedula(''), /vacía/);
+assert.throws(() => leerCedula('x'.repeat(9000)), /larga/);
+console.log('Lectura de cédula: formatos, datos faltantes y RUT inválido: OK');

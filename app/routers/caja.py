@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import update
 from sqlalchemy.orm import Session
 
@@ -80,7 +80,10 @@ def sugerencia_apertura(db: Session = Depends(get_db), cuenta: Cuenta = Depends(
 
 @router.post("/abrir", response_model=CajaOut, dependencies=[Depends(require_cap(CAJA_APERTURA))])
 def abrir_caja(body: AbrirCajaIn, db: Session = Depends(get_db),
-               cuenta: Cuenta = Depends(get_current_cuenta)):
+               cuenta: Cuenta = Depends(get_current_cuenta), request: Request = None):
+    servicio = request.session.get("servicio") if request else None
+    if servicio != "Baño 2" and body.torniquete_ducha_inicial is None:
+        raise HTTPException(400, "Debes ingresar el torniquete de ducha inicial")
     # Serializa aperturas del mismo usuario sin bloquear a otros en PostgreSQL.
     db.execute(update(Cuenta).where(Cuenta.id == cuenta.id).values(username=Cuenta.username))
     if _caja_abierta(db, cuenta.id):
@@ -88,10 +91,11 @@ def abrir_caja(body: AbrirCajaIn, db: Session = Depends(get_db),
         raise HTTPException(400, "Ya hay una caja abierta")
     caja = Caja(
         cuenta_id=cuenta.id,
+        servicio=servicio,
         operador=cuenta.nombre.strip() or cuenta.username,
         saldo_inicial=body.saldo_inicial,
         torniquete_bano_inicial=body.torniquete_bano_inicial,
-        torniquete_ducha_inicial=body.torniquete_ducha_inicial,
+        torniquete_ducha_inicial=None if servicio == "Baño 2" else body.torniquete_ducha_inicial,
         estado="abierta",
     )
     db.add(caja)
@@ -111,6 +115,11 @@ def cerrar_caja(body: CerrarCajaIn, db: Session = Depends(get_db),
     for tipo, etiqueta in (("bano", "baño"), ("ducha", "ducha")):
         inicial = getattr(caja, f"torniquete_{tipo}_inicial")
         final = getattr(body, f"torniquete_{tipo}_final")
+        if tipo == "ducha" and caja.servicio == "Baño 2":
+            caja.torniquete_ducha_final = None
+            continue
+        if final is None:
+            raise HTTPException(400, "Debes ingresar el torniquete de ducha final")
         if inicial is not None and final < inicial:
             db.rollback()
             raise HTTPException(400, f"El torniquete de {etiqueta} final no puede ser menor que el inicial ({inicial}).")
@@ -184,6 +193,7 @@ def resumen_hoy(db: Session = Depends(get_db), cuenta: Cuenta = Depends(get_curr
         "total_transacciones": len(ventas),
         "total_monto": sum(v.monto for v in ventas),
         "efectivo": sum(v.monto for v in ventas if v.forma_pago == "efectivo"),
+        "tarjetas": sum(v.monto for v in ventas if v.forma_pago in ("tarjetas", "debito", "credito")),
         "debito": sum(v.monto for v in ventas if v.forma_pago == "debito"),
         "credito": sum(v.monto for v in ventas if v.forma_pago == "credito"),
         "transferencia": sum(v.monto for v in ventas if v.forma_pago == "transferencia"),

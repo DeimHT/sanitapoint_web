@@ -52,6 +52,7 @@ class Caja(Base):
     fecha_cierre = Column(DateTime, nullable=True)
     operador = Column(String, nullable=False)
     cuenta_id = Column(Integer, ForeignKey("cuentas.id"), nullable=True, index=True)
+    servicio = Column(String, nullable=True)
     saldo_inicial = Column(Integer, default=0)
     saldo_final = Column(Integer, nullable=True)
     estado = Column(String, default="abierta", nullable=False)  # abierta | cerrada
@@ -107,6 +108,7 @@ class Venta(Base):
     forma_pago = Column(String, nullable=False)  # efectivo | debito | credito | transferencia
     rut_cliente = Column(String, nullable=True)
     folio_kame = Column(String, nullable=True)
+    kame_documento_id = Column(String, nullable=True)
     estado_kame = Column(String, default="omitido")  # ok | error | omitido
     caja_id = Column(Integer, ForeignKey("cajas.id"), nullable=True)
     usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True)

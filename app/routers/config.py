@@ -32,3 +32,26 @@ def guardar_config(body: ConfigIn, db: Session = Depends(get_db)):
 def probar_kame(db: Session = Depends(get_db)):
     """Valida la autenticación configurada en .env sin emitir documentos."""
     return KameAPI(db).ping()
+
+
+@router.post("/impresora/test")
+def probar_impresora(db: Session = Depends(get_db)):
+    from app.services.ticket_printer import imprimir_escpos
+    ok, mensaje = imprimir_escpos(
+        db, ticket_num="PRUEBA", servicio_nombre="PRUEBA DE IMPRESION - SIN VENTA",
+        monto=0, forma_pago="efectivo", folio_kame=None, estado_kame="mock",
+        rut_cliente=None, es_pase_libre=False,
+    )
+    return {"ok": ok, "mensaje": "Prueba enviada a la impresora." if ok else mensaje}
+
+
+@router.get("/impresoras")
+def listar_impresoras():
+    from app.services.printer_discovery import detectar_impresoras
+    return detectar_impresoras()
+
+
+@router.get("/lectores")
+def listar_lectores():
+    from app.services.scanner_discovery import detectar_lectores
+    return detectar_lectores()

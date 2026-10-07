@@ -65,6 +65,7 @@ class ServicioPrecioIn(BaseModel):
 
 
 class CajaOut(BaseModel):
+    servicio: ServicioLogin | None = None
     id: int
     fecha_apertura: datetime
     fecha_cierre: datetime | None
@@ -104,13 +105,13 @@ class CajaOut(BaseModel):
 class AbrirCajaIn(BaseModel):
     saldo_inicial: int = Field(ge=0)
     torniquete_bano_inicial: int = Field(ge=0)
-    torniquete_ducha_inicial: int = Field(ge=0)
+    torniquete_ducha_inicial: int | None = Field(default=None, ge=0)
 
 
 class CerrarCajaIn(BaseModel):
     saldo_final: int = Field(ge=0)
     torniquete_bano_final: int = Field(ge=0)
-    torniquete_ducha_final: int = Field(ge=0)
+    torniquete_ducha_final: int | None = Field(default=None, ge=0)
 
 
 class MovimientoIn(BaseModel):
@@ -134,7 +135,7 @@ class MovimientoOut(BaseModel):
 
 class VentaIn(BaseModel):
     servicio_id: int
-    forma_pago: Literal["efectivo", "transferencia"]
+    forma_pago: Literal["efectivo", "tarjetas"]
     rut_cliente: str | None = None
     usuario_id: int | None = None
     es_pase_libre: bool = False

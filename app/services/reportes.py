@@ -43,12 +43,14 @@ def get_ventas(db: Session, desde: date | None = None, hasta: date | None = None
 
 def _totales(ventas: list[Venta]) -> dict:
     totales = {"cantidad": len(ventas), "monto_total": 0,
-               "efectivo": 0, "debito": 0, "credito": 0, "transferencia": 0,
+               "efectivo": 0, "tarjetas": 0, "debito": 0, "credito": 0, "transferencia": 0,
                "pases_libres": 0}
     for v in ventas:
         totales["monto_total"] += v.monto
         if v.forma_pago in totales:
             totales[v.forma_pago] += v.monto
+        if v.forma_pago in ("debito", "credito"):
+            totales["tarjetas"] += v.monto
         if v.es_pase_libre:
             totales["pases_libres"] += 1
     return totales
@@ -87,6 +89,7 @@ def reporte_ventas_pdf(ventas: list[Venta], titulo: str, subtitulo: str) -> io.B
         f"Total transacciones: {t['cantidad']}  |  Monto total: "
         f"${t['monto_total']:,.0f}".replace(",", ".") +
         f"  |  Efectivo: ${t['efectivo']:,.0f}".replace(",", ".") +
+        f"  |  Tarjetas: ${t['tarjetas']:,.0f}".replace(",", ".") +
         f"  |  Débito: ${t['debito']:,.0f}".replace(",", ".") +
         f"  |  Crédito: ${t['credito']:,.0f}".replace(",", ".") +
         f"  |  Transferencia: ${t['transferencia']:,.0f}".replace(",", ".") +
@@ -123,6 +126,7 @@ def reporte_ventas_excel(ventas: list[Venta], titulo: str, subtitulo: str) -> io
     t = _totales(ventas)
     ws.append([])
     ws.append(["TOTALES", "", "", "", t["monto_total"], "", "", "", "", ""])
+    ws.append(["Tarjetas", t["tarjetas"]])
     ws.append(["Efectivo", t["efectivo"], "Débito", t["debito"],
                 "Crédito", t["credito"], "Transferencia", t["transferencia"],
                 "Pases libres", t["pases_libres"]])

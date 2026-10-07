@@ -45,7 +45,7 @@ Pulsa **Abrir**. Cada cajero trabaja con su propio turno; necesitas tener la caj
 ### 2. Registrar una venta
 
 1. Entra a **Venta**.
-2. Elige la forma de pago: **Efectivo** o **Transferencia**.
+2. Elige la forma de pago: **Efectivo** o **Tarjetas**.
 3. Revisa el precio y pulsa el servicio: **Uso de Baño** o **Ducha**. **Al pulsarlo se registra la venta.**
 4. Revisa el resultado en pantalla: allí se indica el ticket, el estado de la boleta y si se envió a la impresora.
 
@@ -130,3 +130,34 @@ Esta copia incluye los registros, los tickets guardados y otros archivos necesar
 | No aparece una opción del menú | Puede que tu cuenta no tenga permiso para usarla. Consulta al administrador. |
 
 Para instalación manual y detalles técnicos, la persona encargada puede consultar la [guía técnica](GUIA.md).
+
+
+## Configurar la impresora ONE R200
+
+En Windows, **Config → Actualizar lista** detecta impresoras instaladas y dispositivos USB del computador principal. Selecciona la R200 y pulsa **Imprimir prueba**: los datos se completan y guardan automáticamente. Si aparece con su nombre en Windows, usa esa opción para imprimir mediante su controlador. Si solo aparece como «Compatibilidad con impresoras USB», la conexión está detectada pero puede faltar el controlador necesario. La detección no instala ni cambia controladores.
+
+### Importar cuentas de acceso desde Excel
+
+En **Cuentas → Importar Excel**, descarga la plantilla y completa la hoja **Cuentas** con las columnas `usuario`, `nombre`, `rol`, `contrasena`. Los roles permitidos son `cajero`, `supervisor`, `contabilidad` y `administrador`; solo un administrador puede crear cuentas administradoras. Se admiten hasta 500 cuentas y archivos de hasta 1 MB.
+
+Pulsa **Revisar archivo** para ver las cuentas antes de crearlas. Las contraseñas no se muestran. Si hay errores, corrige las filas indicadas y vuelve a cargar el archivo; no se crea ninguna cuenta hasta que todas sean válidas. Luego pulsa **Crear cuentas**. Las cuentas existentes no se modifican y las nuevas contraseñas se almacenan mediante hash.
+
+### Personas con pase libre y lector USB
+
+En **Pases libres** puedes **Ingresar datos** manualmente o **Escanear cédula**. Usa una pistola que lea QR en modo USB teclado (HID), con Enter al terminar. La lectura se recibe en el campo enfocado del equipo donde está abierto el navegador. Puedes pegar el contenido para probar sin hardware. Se reconocen RUN/RUT y nombre cuando vienen como parámetros de la URL o campos JSON; si no vienen, completa los datos manualmente. No se abre el enlace ni se consulta Registro Civil.
+
+En **Configuración → Lector de cédulas**, activa/desactiva la lectura, consulta dispositivos candidatos del computador principal, guarda el dispositivo de referencia y prueba el QR sin crear una persona. Windows puede mostrar lectores como teclados genéricos: esta lista también incluye teclados y no vincula las pulsaciones exclusivamente a un dispositivo. Revisa los datos antes de guardar; una lectura no otorga un pase automáticamente.
+
+Después de actualizar el sistema, cierra la ventana del servidor y abre de nuevo **iniciar_servidor.bat**. El inicio instala el soporte Windows si falta. Recarga la página: un aviso «Not Found» en impresión o detección indica que debes comprobar que el servidor esté ejecutando esta versión.
+
+1. Conecta la R200 por Ethernet a la red del computador principal y averigua su IP con la utilidad o documentación de la impresora. Mantén esa dirección fija o reservada en el router.
+2. En **Config → Ticket e impresora térmica**, selecciona **Red (ESC/POS)**, ingresa la IP y el puerto configurado en la impresora (habitualmente **9100**).
+3. Elige **Solo con botón Imprimir boleta** si quieres imprimir después de registrar cada venta. La opción **Automática** envía una copia al registrar la venta; pulsar el botón después envía otra copia.
+4. Pulsa **Imprimir prueba**: guarda los ajustes de impresora y envía un ticket de prueba sin registrar una venta ni emitir en KAME.
+5. Registra una venta y pulsa **Imprimir boleta**. El botón imprime la venta existente, sin volver a cobrar ni emitir una boleta en KAME. Si falla, puedes volver a intentarlo.
+
+Para USB, la impresora debe estar conectada al computador principal que ejecuta Python. Ingresa sus identificadores **VID** y **PID** reales en hexadecimal (en Windows, Administrador de dispositivos → Propiedades → Detalles → Id. de hardware). El envío USB usa libusb y puede necesitar un controlador compatible; Ethernet suele ser más sencillo.
+
+El envío se realiza desde el servidor: si está alojado fuera del local necesita acceso a la red de la impresora. Conectar la impresora al equipo del navegador no le da acceso al servidor. El mensaje «enviado» confirma el envío de datos; comprueba físicamente el papel. El contenido conserva el estado de KAME y señala si es una prueba o un comprobante pendiente de emisión.
+
+Al ingresar con Baño 2, los turnos nuevos no solicitan lecturas de ducha ni permiten vender ese servicio. Baño 1 mantiene las lecturas de baño y ducha. El servicio queda guardado en la caja durante todo el turno.
