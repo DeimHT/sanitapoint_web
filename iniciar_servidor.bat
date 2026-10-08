@@ -29,7 +29,7 @@ if not exist ".venv\Scripts\python.exe" (
   python -m venv .venv
   call ".venv\Scripts\activate.bat"
   python -m pip install --upgrade pip
-  pip install -r requirements.txt
+  python -m pip install -r requirements.txt
   if errorlevel 1 (
     echo.
     echo [ERROR] Fallo la instalacion de dependencias. Revisa tu conexion a internet.
