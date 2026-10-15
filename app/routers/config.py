@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -16,13 +16,13 @@ router = APIRouter(prefix="/api/config", tags=["config"],
 def leer_config(db: Session = Depends(get_db)):
     # Valores KAME antiguos pueden permanecer en bases existentes, pero no se
     # usan ni se exponen: la única fuente válida es .env/el entorno.
-    return {k: v for k, v in get_all_config(db).items() if not k.startswith("kame_")}
+    return {k: v for k, v in get_all_config(db).items() if not k.startswith(("kame_", "impresora_", "lector_"))}
 
 
 @router.put("")
 def guardar_config(body: ConfigIn, db: Session = Depends(get_db)):
     for clave, valor in body.valores.items():
-        if clave.startswith("kame_"):
+        if clave.startswith(("kame_", "impresora_", "lector_")):
             continue  # KAME se administra exclusivamente mediante .env
         set_config(db, clave, valor)
     return {"ok": True}
@@ -35,23 +35,7 @@ def probar_kame(db: Session = Depends(get_db)):
 
 
 @router.post("/impresora/test")
-def probar_impresora(db: Session = Depends(get_db)):
-    from app.services.ticket_printer import imprimir_escpos
-    ok, mensaje = imprimir_escpos(
-        db, ticket_num="PRUEBA", servicio_nombre="PRUEBA DE IMPRESION - SIN VENTA",
-        monto=0, forma_pago="efectivo", folio_kame=None, estado_kame="mock",
-        rut_cliente=None, es_pase_libre=False,
-    )
-    return {"ok": ok, "mensaje": "Prueba enviada a la impresora." if ok else mensaje}
-
-
 @router.get("/impresoras")
-def listar_impresoras():
-    from app.services.printer_discovery import detectar_impresoras
-    return detectar_impresoras()
-
-
 @router.get("/lectores")
-def listar_lectores():
-    from app.services.scanner_discovery import detectar_lectores
-    return detectar_lectores()
+def dispositivos_locales():
+    raise HTTPException(410, "Configura los dispositivos en Este computador. La impresion se realiza en el navegador del puesto.")

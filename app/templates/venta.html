@@ -64,9 +64,10 @@ let formaPago = "efectivo";
 let servicios = [];
 let usuarios = [];
 let ventaEnCurso = false;
+let boletaPorCompletar = null;
 let botonesBloqueados = [];
 function iniciarVenta(mensaje, boton) {
-  if (ventaEnCurso) return false;
+  if (ventaEnCurso || boletaPorCompletar) return false;
   ventaEnCurso = true;
   botonesBloqueados = Array.from(document.querySelectorAll("#grid_servicios button, #pagos button, #btn_pase, #modal_pase button"))
     .map(el => ({ el, disabled: el.disabled, texto: el.textContent }));
@@ -83,10 +84,10 @@ function iniciarVenta(mensaje, boton) {
 }
 function terminarVenta() {
   botonesBloqueados.forEach(({ el, disabled, texto }) => {
-    el.disabled = disabled;
+    el.disabled = boletaPorCompletar ? true : disabled;
     el.textContent = texto;
   });
-  botonesBloqueados = [];
+  if (!boletaPorCompletar) botonesBloqueados = [];
   document.getElementById("grid_servicios").setAttribute("aria-busy", "false");
   ventaEnCurso = false;
 }
@@ -120,6 +121,12 @@ async function cargarServicios() {
     btn.onclick = () => vender(s, btn);
     grid.appendChild(btn);
   });
+  const pendiente = await api.get("/api/ventas/boleta-en-curso");
+  if (pendiente?.ticket) {
+    iniciarVenta("Recuperando boleta de la atencion anterior...");
+    await presentarVenta(pendiente);
+    terminarVenta();
+  }
 }
 
 function mostrarResultado(html, tipo) {
@@ -132,11 +139,12 @@ function escaparResultado(valor) {
 
 function mostrarVentaConfirmada(venta, kame, impresion) {
   const e = escaparResultado;
+  const incompleta = venta.estado_kame === "pendiente" || (venta.estado_kame === "ok" && !venta.kame_timbre_disponible);
   document.getElementById("resultado").innerHTML = `
-    <section class="venta-confirmacion" aria-label="Resultado de la venta">
+    <section class="venta-confirmacion ${incompleta ? "venta-incompleta" : ""}" aria-label="Resultado de la venta">
       <div class="venta-confirmacion-cabecera">
-        <span class="venta-confirmacion-icono" aria-hidden="true">✓</span>
-        <div class="venta-confirmacion-titulo"><p>Venta registrada</p><h3>${e(venta.servicio_nombre)}</h3></div>
+        <span class="venta-confirmacion-icono" aria-hidden="true">${incompleta ? "!" : "✓"}</span>
+        <div class="venta-confirmacion-titulo"><p>${incompleta ? "Atencion sin completar: falta la boleta" : "Venta registrada"}</p><h3>${e(venta.servicio_nombre)}</h3></div>
         <strong class="venta-confirmacion-monto">${e(fmtMonto(venta.monto))}</strong>
       </div>
       <div class="venta-confirmacion-detalle">
@@ -152,30 +160,46 @@ function mostrarVentaConfirmada(venta, kame, impresion) {
     </section>`;
 }
 
-async function vender(servicio, boton) {
-  if (!iniciarVenta(`Procesando ${servicio.nombre} · ${fmtMonto(servicio.precio)}. Espera el resultado de la venta…`, boton)) return;
-  try {
-    const venta = await api.post("/api/ventas", {
-      servicio_id: servicio.id,
-      forma_pago: formaPago,
-    });
+async function presentarVenta(venta) {
     if (venta.detalle_kame) alert(venta.detalle_kame);
     const kame = venta.estado_kame === "ok" ? `Boleta KAME: ${venta.folio_kame}`
       : venta.estado_kame === "mock" ? `Boleta (modo prueba): ${venta.folio_kame}`
       : venta.estado_kame === "error" ? "Error KAME: revisa el aviso" : "Sin boleta KAME";
-    const impresion = venta.impreso_termica ? "Ticket enviado a impresora térmica."
-      : `Ticket generado en PDF (${venta.detalle_impresion}).`;
+    const impresion = venta.estado_kame === "ok"
+      ? (venta.kame_timbre_disponible ? "Timbre listo para imprimir." : venta.kame_error_documento || "Timbre pendiente. Pulsa Imprimir para reintentar sin registrar otra venta.")
+      : "Comprobante sin timbre de una boleta real.";
+    boletaPorCompletar = venta.estado_kame === "pendiente" || (venta.estado_kame === "ok" && !venta.kame_timbre_disponible) ? venta : null;
     mostrarVentaConfirmada(venta, kame, impresion);
     document.getElementById("btn_imprimir_boleta").onclick = async function () {
       this.disabled = true;
       const estado = document.getElementById("estado_impresion");
       estado.textContent = " Enviando...";
       try {
-        const res = await api.post(`/api/ventas/${venta.ticket}/imprimir`, {});
-        estado.textContent = " " + res.mensaje;
+        const res = await equipoLocal.imprimir(venta.ticket);
+        if (venta.estado_kame === "ok") {
+          venta.kame_timbre_disponible = true;
+          boletaPorCompletar = null;
+          terminarVenta();
+          mostrarVentaConfirmada(venta, kame, "Timbre listo. " + res.mensaje);
+          document.getElementById("btn_imprimir_boleta").onclick = this.onclick;
+        } else { estado.textContent = " " + res.mensaje; }
       } catch (e) { estado.textContent = " " + e.message; }
       finally { this.disabled = false; }
     };
+    if (equipoLocal.leer().impresora_automatica === "1" && (venta.estado_kame === "mock" || (venta.estado_kame === "ok" && venta.kame_timbre_disponible))) {
+      try { const res = await equipoLocal.imprimir(venta.ticket); document.getElementById("estado_impresion").textContent = res.mensaje; }
+      catch (e) { document.getElementById("estado_impresion").textContent = e.message; }
+    }
+}
+
+async function vender(servicio, boton) {
+  if (!iniciarVenta(`Procesando ${servicio.nombre} · ${fmtMonto(servicio.precio)}. Preparando boleta con timbre; espera el resultado…`, boton)) return;
+  try {
+    const venta = await api.post("/api/ventas", {
+      servicio_id: servicio.id,
+      forma_pago: formaPago,
+    });
+    await presentarVenta(venta);
     refrescarStatusbar();
   } catch (e) {
     mostrarResultado(e.message, "error");
@@ -185,7 +209,7 @@ async function vender(servicio, boton) {
 }
 
 async function abrirModalPase() {
-  if (ventaEnCurso) return;
+  if (ventaEnCurso || boletaPorCompletar) return;
   document.getElementById("pase_lectura").value = "";
   document.getElementById("pase_buscar").value = "";
   document.getElementById("pase_lectura_persona").replaceChildren();
@@ -196,7 +220,7 @@ async function abrirModalPase() {
   document.getElementById("modal_pase").classList.remove("hidden");
   document.getElementById("pase_lectura").disabled = true;
   try {
-    const config = await api.get("/api/usuarios/lector/config");
+    const config = equipoLocal.lector();
     usuarios = await api.get("/api/usuarios");
     document.getElementById("pase_lectura_estado").textContent = config.modo === "ninguno"
       ? "El lector está desactivado en Configuración. Usa Buscar por RUT."

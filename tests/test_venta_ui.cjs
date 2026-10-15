@@ -30,6 +30,7 @@ const context = vm.createContext({
   api: { post() { calls++; return new Promise((resolve, reject) => {
     resolveRequest = resolve; rejectRequest = reject;
   }); } },
+  equipoLocal: { leer: () => ({ impresora_automatica: "0" }) },
   fmtMonto: value => '$' + value, refrescarStatusbar() {}, alert() {},
   leerCedula: require('../app/static/js/cedula.js').leerCedula,
 });

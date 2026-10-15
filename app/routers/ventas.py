@@ -1,32 +1,49 @@
 from datetime import date, datetime
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import FileResponse, HTMLResponse
 from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.deps import get_current_cuenta, require_cap
-from app.models import Cuenta, MovimientoCaja, Servicio, Usuario, Venta
+from app.models import Caja, Cuenta, MovimientoCaja, Servicio, Usuario, Venta
 from app.permissions import EMITIR_BOLETAS, VER_HISTORIAL
-from app.routers.caja import _caja_abierta, bloquear_caja
+from app.routers.caja import _caja_abierta, bloquear_caja, comprobar_servicio
 from app.schemas import VentaIn, VentaOut
 from app.services import ticket_printer
-from app.services.kame_client import emitir_boleta
+from app.services.kame_client import emitir_boleta, verificar_configuracion_punto_venta
+from app.services.documentos_kame import DocumentoKameError, obtener_pdf, preparar_timbre
 from app.services.cuadre import tipo_acceso
 
 router = APIRouter(prefix="/api/ventas", tags=["ventas"],
                    dependencies=[Depends(get_current_cuenta)])
 
 
+def boleta_incompleta(db, caja_id):
+    return db.query(Venta).filter(Venta.caja_id == caja_id, Venta.es_pase_libre == False,
+        (Venta.estado_kame == "pendiente") | ((Venta.estado_kame == "ok") &
+        (Venta.kame_timbre_disponible == False))).order_by(Venta.id).first()
+
+
+@router.get("/boleta-en-curso", response_model=VentaOut | None,
+            dependencies=[Depends(require_cap(EMITIR_BOLETAS))])
+def consultar_boleta_en_curso(db: Session = Depends(get_db), cuenta: Cuenta = Depends(get_current_cuenta)):
+    caja = _caja_abierta(db, cuenta.id)
+    return boleta_incompleta(db, caja.id) if caja else None
+
+
 @router.post("", response_model=VentaOut, dependencies=[Depends(require_cap(EMITIR_BOLETAS))])
 def registrar_venta(body: VentaIn, db: Session = Depends(get_db),
-                    cuenta: Cuenta = Depends(get_current_cuenta)):
+                    cuenta: Cuenta = Depends(get_current_cuenta), request: Request = None):
     caja = _caja_abierta(db, cuenta.id)
     if not caja:
         raise HTTPException(400, "Debes abrir la caja antes de vender")
 
+    if request and not caja.servicio:
+        raise HTTPException(409, "Cierra el turno anterior sin servicio y abre una caja nueva antes de vender.")
+    comprobar_servicio(caja, request)
     servicio = db.get(Servicio, body.servicio_id)
     if not servicio or not servicio.activo:
         raise HTTPException(404, "Servicio no encontrado")
@@ -38,7 +55,15 @@ def registrar_venta(body: VentaIn, db: Session = Depends(get_db),
         raise HTTPException(400, "El servicio debe corresponder a baño o ducha")
     if body.es_pase_libre and tipo != "bano":
         raise HTTPException(400, "El pase libre corresponde al servicio de baño")
+    if not body.es_pase_libre:
+        try:
+            verificar_configuracion_punto_venta(db)
+        except DocumentoKameError as error:
+            raise HTTPException(503, f"No se registro la venta: {error}")
     caja = bloquear_caja(db, caja.id)
+    pendiente = boleta_incompleta(db, caja.id)
+    if pendiente:
+        raise HTTPException(409, f"Completa primero la boleta del ticket {pendiente.ticket}. No se registro otra venta.")
 
     if body.es_pase_libre:
         if not body.usuario_id:
@@ -95,33 +120,51 @@ def registrar_venta(body: VentaIn, db: Session = Depends(get_db),
         db.commit()
         db.refresh(venta)
 
-    resultado_impresion = ticket_printer.emitir_ticket(
-        db, venta.ticket, venta.servicio_nombre, venta.monto, venta.forma_pago,
-        venta.folio_kame, venta.estado_kame, venta.rut_cliente, venta.es_pase_libre,
-        creado_en=venta.creado_en, servicio_codigo=venta.servicio_id,
-    )
-
     out = VentaOut.model_validate(venta)
     out.detalle_kame = folio_kame if estado_kame == "error" else ""
-    out.impreso_termica = resultado_impresion["impreso_termica"]
-    out.detalle_impresion = resultado_impresion["detalle_impresion"]
+    out.detalle_impresion = (venta.kame_error_documento or "Timbre disponible para imprimir en este computador."
+                             if venta.estado_kame == "ok" else "Comprobante de prueba o venta sin timbre.")
     return out
 
 
 @router.get("", response_model=list[VentaOut], dependencies=[Depends(require_cap(VER_HISTORIAL))])
 def listar_ventas(desde: date | None = None, hasta: date | None = None,
-                   servicio_id: int | None = None, db: Session = Depends(get_db)):
+                   servicio_id: int | None = None, db: Session = Depends(get_db),
+                   cuenta: Cuenta = Depends(get_current_cuenta)):
     from app.services.reportes import get_ventas
-    return get_ventas(db, desde, hasta, servicio_id)
+    ventas = get_ventas(db, desde, hasta, servicio_id,
+                        cuenta_id=cuenta.id if cuenta.rol == "cajero" else None)
+    return [VentaOut.model_validate(v).model_copy(update={
+        "cajero": v.caja.operador if v.caja else "Sin asignar",
+        "cuenta_id": v.caja.cuenta_id if v.caja else None,
+        "servicio_caja": v.caja.servicio if v.caja else None,
+    }) for v in ventas]
+
+
+def venta_autorizada(ticket: str, db: Session, cuenta: Cuenta) -> Venta:
+    q = db.query(Venta).filter(Venta.ticket == ticket)
+    if cuenta.rol == "cajero":
+        q = q.join(Caja).filter(Caja.cuenta_id == cuenta.id)
+    venta = q.first()
+    if not venta:
+        raise HTTPException(404, "Ticket no encontrado")
+    return venta
 
 
 @router.get("/{ticket}/pdf", dependencies=[Depends(require_cap(VER_HISTORIAL))])
-def descargar_ticket_pdf(ticket: str, db: Session = Depends(get_db)):
-    venta = db.query(Venta).filter(Venta.ticket == ticket).first()
-    if not venta:
-        raise HTTPException(404, "Ticket no encontrado")
+def descargar_ticket_pdf(ticket: str, db: Session = Depends(get_db),
+                         cuenta: Cuenta = Depends(get_current_cuenta)):
+    venta = venta_autorizada(ticket, db, cuenta)
     if venta.es_pase_libre:
         raise HTTPException(400, "Los pases libres no generan boleta ni PDF")
+    if venta.estado_kame == "ok":
+        try:
+            path = obtener_pdf(venta)
+        except (DocumentoKameError, OSError) as error:
+            raise HTTPException(503, str(error) if isinstance(error, DocumentoKameError) else
+                                "No se pudo recuperar el PDF de KAME. Reintenta sin registrar otra venta.")
+        return FileResponse(path, media_type="application/pdf", filename=f"boleta-{venta.folio_kame}.pdf",
+                            headers={"Cache-Control": "no-store"})
     path = ticket_printer.generar_ticket_pdf(
         db, venta.ticket, venta.servicio_nombre, venta.monto, venta.forma_pago,
         venta.folio_kame, venta.estado_kame, venta.rut_cliente, venta.es_pase_libre,
@@ -132,19 +175,51 @@ def descargar_ticket_pdf(ticket: str, db: Session = Depends(get_db)):
                         headers={"Cache-Control": "no-store"})
 
 
-@router.post("/{ticket}/imprimir", dependencies=[Depends(require_cap(EMITIR_BOLETAS))])
-def imprimir_boleta(ticket: str, db: Session = Depends(get_db)):
-    """Imprime una venta existente sin volver a cobrar ni emitir en KAME."""
-    venta = db.query(Venta).filter(Venta.ticket == ticket).first()
-    if not venta:
-        raise HTTPException(404, "Ticket no encontrado")
+@router.post("/{ticket}/imprimir", dependencies=[Depends(require_cap(VER_HISTORIAL))])
+def imprimir_boleta(ticket: str, db: Session = Depends(get_db),
+                    cuenta: Cuenta = Depends(get_current_cuenta)):
+    venta = venta_autorizada(ticket, db, cuenta)
     if venta.es_pase_libre:
-        raise HTTPException(400, "Los pases libres no generan boleta ni impresión")
-    ok, mensaje = ticket_printer.imprimir_escpos(
-        db, ticket_num=venta.ticket, servicio_nombre=venta.servicio_nombre,
+        raise HTTPException(400, "Los pases libres no generan impresion")
+    if venta.estado_kame == "pendiente":
+        raise HTTPException(409, "La emision sigue en curso. Actualiza para consultar esta misma venta; no vuelvas a cobrar.")
+    if venta.estado_kame == "ok":
+        try:
+            preparar_timbre(db, venta, esperar=True)
+        except DocumentoKameError as error:
+            raise HTTPException(503, str(error))
+    return {"ok": True, "mensaje": "Imprime desde el navegador de este computador.", "venta": VentaOut.model_validate(venta)}
+
+
+@router.get("/{ticket}/imprimir", response_class=HTMLResponse,
+            dependencies=[Depends(require_cap(VER_HISTORIAL))])
+def vista_impresion(ticket: str, db: Session = Depends(get_db),
+                    cuenta: Cuenta = Depends(get_current_cuenta)):
+    import base64
+    import io
+    from app.services.receipt_layout import render_receipt
+    venta = venta_autorizada(ticket, db, cuenta)
+    if venta.es_pase_libre:
+        raise HTTPException(400, "Los pases libres no generan impresion")
+    if venta.estado_kame == "pendiente":
+        raise HTTPException(409, "La emision sigue en curso. Actualiza para consultar esta misma venta; no vuelvas a cobrar.")
+    documento = None
+    if venta.estado_kame == "ok":
+        try:
+            documento = preparar_timbre(db, venta)
+        except DocumentoKameError as error:
+            raise HTTPException(503, str(error))
+    imagen = render_receipt(db, ticket_num=venta.ticket, servicio_nombre=venta.servicio_nombre,
         monto=venta.monto, forma_pago=venta.forma_pago, folio_kame=venta.folio_kame,
         estado_kame=venta.estado_kame, rut_cliente=venta.rut_cliente,
-        es_pase_libre=venta.es_pase_libre, creado_en=venta.creado_en,
-        servicio_codigo=venta.servicio_id,
-    )
-    return {"ok": ok, "mensaje": "Ticket enviado a la impresora." if ok else mensaje}
+        es_pase_libre=False, creado_en=venta.creado_en, servicio_codigo=venta.servicio_id,
+        documento_tributario=documento)
+    buffer = io.BytesIO()
+    imagen.save(buffer, format="PNG")
+    datos = base64.b64encode(buffer.getvalue()).decode("ascii")
+    alto_mm = imagen.height * 72 / imagen.width + 2
+    return HTMLResponse('<!doctype html><html lang="es"><meta charset="utf-8">'
+        f'<title>Imprimir ticket</title><style>@page{{size:80mm {alto_mm:.1f}mm;margin:0}}'
+        'body{margin:0}img{display:block;width:72mm;margin:0 4mm;max-width:100%}</style>'
+        '<img alt="Ticket" src="data:image/png;base64,' + datos + '" '
+        'onload="window.focus();window.print()"></html>', headers={"Cache-Control": "no-store"})

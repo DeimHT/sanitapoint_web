@@ -15,3 +15,7 @@ libusb-package>=1.0.26; sys_platform == "win32"
 pywin32>=306; sys_platform == "win32"
 
 python-dotenv>=1.0
+
+# Timbre PDF417 y lectura segura del XML firmado de KAME.
+pdf417gen==0.8.1
+defusedxml>=0.7.1,<0.8

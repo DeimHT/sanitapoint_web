@@ -14,7 +14,7 @@ from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, Tabl
 from sqlalchemy import extract
 from sqlalchemy.orm import Session
 
-from app.models import Venta
+from app.models import Caja, Venta
 
 MESES_ES = [
     "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
@@ -29,8 +29,10 @@ def _rango_datetime(desde: date | None, hasta: date | None):
 
 
 def get_ventas(db: Session, desde: date | None = None, hasta: date | None = None,
-               servicio_id: int | None = None) -> list[Venta]:
+               servicio_id: int | None = None, cuenta_id: int | None = None) -> list[Venta]:
     q = db.query(Venta)
+    if cuenta_id is not None:
+        q = q.join(Caja).filter(Caja.cuenta_id == cuenta_id)
     inicio, fin = _rango_datetime(desde, hasta)
     if inicio:
         q = q.filter(Venta.creado_en >= inicio)

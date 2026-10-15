@@ -39,7 +39,7 @@ class TurnosTests(unittest.TestCase):
         self.assertIsNone(venta.folio_kame)
         for action in (descargar_ticket_pdf, imprimir_boleta):
             with self.assertRaises(HTTPException) as error:
-                action(venta.ticket, self.db)
+                action(venta.ticket, self.db, self.a)
             self.assertEqual(error.exception.status_code, 400)
 
     def test_zero_pass_limit_is_unlimited_in_check_and_sale(self):
@@ -82,6 +82,9 @@ class TurnosTests(unittest.TestCase):
         self.assertEqual(self.db.query(Venta).count(), 0)
 
     def setUp(self):
+        configuracion = patch("app.routers.ventas.verificar_configuracion_punto_venta")
+        configuracion.start()
+        self.addCleanup(configuracion.stop)
         temporal = tempfile.TemporaryDirectory()
         self.addCleanup(temporal.cleanup)
         self.engine = create_engine(f"sqlite:///{Path(temporal.name) / 'test.db'}",
@@ -253,6 +256,8 @@ class TurnosTests(unittest.TestCase):
         self.assertEqual(sorted(resultados), [False, True])
 
     def test_api_con_sesiones_reales_y_permisos(self):
+        self.db.get(Caja, self.ca.id).servicio = "Baño 1"
+        self.db.get(Caja, self.cb.id).servicio = "Baño 2"
         self.a.password_hash = hash_password("secreto")
         self.b.password_hash = self.a.password_hash
         self.supervisor.password_hash = self.a.password_hash
@@ -293,7 +298,7 @@ class TurnosTests(unittest.TestCase):
         cookies = {}
         for username in ("a", "b", "super"):
             status, _, cookie = call("POST", "/api/auth/login", {
-                "username": username, "password": "secreto", "servicio": "Baño 1"})
+                "username": username, "password": "secreto", "servicio": "Baño 2" if username == "b" else "Baño 1"})
             self.assertEqual(status, 200)
             cookies[username] = cookie
         for username, caja in (("a", self.ca), ("b", self.cb)):

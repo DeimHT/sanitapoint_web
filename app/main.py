@@ -16,6 +16,7 @@ from app.database import Base, SessionLocal, engine, get_db
 from app.schemas import ServicioLogin
 from app.routers import auth, caja, config, cuentas, reportes, servicios, usuarios, ventas
 from app.seed import run_seed
+from app.services.mantenimiento import MantenimientoMiddleware, archivo_mantenimiento
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -25,6 +26,24 @@ app = FastAPI(title="SanitaPoint Web")
 # el acceso es por http; same_site="lax" es suficiente para este uso.
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY,
                    same_site="lax", https_only=False)
+
+app.add_middleware(MantenimientoMiddleware)
+
+
+@app.get("/api/salud", include_in_schema=False)
+def salud():
+    from fastapi.responses import JSONResponse
+    with engine.connect() as conn:
+        conn.execute(text("SELECT 1"))
+    sqlite_predeterminada = engine.dialect.name == "sqlite" and (
+        os.path.normcase(os.path.abspath(engine.url.database or "")) ==
+        os.path.normcase(os.path.abspath(os.path.join(BASE_DIR, "..", "data", "sanitapoint.db"))))
+    return JSONResponse({"ok": True, "revision": os.environ.get("SANITAPOINT_REVISION", "local"),
+                         "mantenimiento": archivo_mantenimiento().exists(),
+                         "solicitudes_en_curso": getattr(app.state, "solicitudes_en_curso", 0),
+                         "sqlite_predeterminada": sqlite_predeterminada},
+                        headers={"Cache-Control": "no-store"})
+
 
 class StaticNoCache(StaticFiles):
     """Sirve estáticos con revalidación: evita que los navegadores de las cajas
@@ -63,7 +82,10 @@ def _asegurar_columnas():
         "torniquete_bano_inicial": "INTEGER", "torniquete_ducha_inicial": "INTEGER",
         "cuenta_id": "INTEGER REFERENCES cuentas(id)",
         "torniquete_bano_final": "INTEGER", "torniquete_ducha_final": "INTEGER",
-    }, "ventas": {"tipo_acceso": "VARCHAR", "kame_documento_id": "VARCHAR"}}
+    }, "ventas": {"tipo_acceso": "VARCHAR", "kame_documento_id": "VARCHAR",
+                  "kame_rut_emisor": "VARCHAR", "kame_tipo_documento": "VARCHAR",
+                  "kame_timbre_disponible": "BOOLEAN NOT NULL DEFAULT 0",
+                  "kame_error_documento": "TEXT NOT NULL DEFAULT ''"}}
     insp = inspect(engine)
     with engine.begin() as conn:
         for tabla, columnas in nuevas.items():
@@ -97,12 +119,28 @@ def _migrar_roles():
         conn.execute(text("UPDATE cuentas SET rol='cajero' WHERE rol='operador'"))
 
 
+def _asegurar_caja_por_servicio():
+    with engine.connect() as conn:
+        duplicados = conn.execute(text(
+            "SELECT servicio FROM cajas WHERE estado = 'abierta' AND servicio IS NOT NULL "
+            "GROUP BY servicio HAVING COUNT(*) > 1"
+        )).scalars().all()
+    if duplicados:
+        raise RuntimeError("Hay cajas abiertas duplicadas en " + ", ".join(duplicados) +
+                           ". Concilia y cierra esos turnos antes de actualizar el servidor.")
+    for indice in models.Caja.__table__.indexes:
+        indice.create(bind=engine, checkfirst=True)
+
+
 @app.on_event("startup")
 def on_startup():
     # Crea las tablas si no existen (reemplaza a las migraciones Alembic: con
     # SQLite en un solo archivo no hace falta un paso de migración manual).
     Base.metadata.create_all(bind=engine)
     _asegurar_columnas()
+    # Tambien instala la restriccion en bases existentes. Si hay turnos
+    # duplicados, deben conciliarse antes de iniciar; nunca cerrarlos a ciegas.
+    _asegurar_caja_por_servicio()
     _migrar_roles()
     db = SessionLocal()
     try:
@@ -132,6 +170,7 @@ PAGES = {
     "/cierres": ("cierres.html", {perms.VER_CIERRES}),
     "/usuarios": ("usuarios.html", {perms.GESTION_CLIENTES}),
     "/reportes": ("reportes.html", {perms.VER_REPORTES}),
+    "/equipo": ("equipo.html", perms.TODAS),
     "/config": ("config.html", {perms.CONFIGURACION}),
     "/cuentas": ("cuentas.html", {perms.GESTION_CUENTAS}),
 }

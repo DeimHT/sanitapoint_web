@@ -44,7 +44,7 @@ CAPS_POR_ROL: dict[str, set[str]] = {
         EMITIR_BOLETAS, CAJA_APERTURA, CAJA_CIERRE, VER_HISTORIAL, GESTION_CLIENTES,
     },
     "supervisor": {
-        CAJA_RETIRO,
+        CAJA_RETIRO, VER_HISTORIAL,
     },
     "contabilidad": {
         VER_REPORTES, VER_CIERRES, VER_HISTORIAL, GESTION_CUENTAS,
