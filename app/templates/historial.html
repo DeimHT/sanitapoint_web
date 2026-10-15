@@ -14,9 +14,9 @@
 <div class="card">
   <table>
     <thead>
-      <tr><th>Ticket</th><th>Fecha</th><th>Servicio</th><th>Monto</th><th>Pago</th><th>RUT</th><th>Boleta</th><th>Pase</th><th>Acciones</th></tr>
+      <tr><th>Ticket</th><th>Fecha</th><th>Servicio</th><th>Cajero</th><th>Caja / Baño</th><th>Monto</th><th>Pago</th><th>RUT</th><th>Boleta</th><th>Pase</th><th>Acciones</th></tr>
     </thead>
-    <tbody id="tabla"><tr><td colspan="9">Cargando…</td></tr></tbody>
+    <tbody id="tabla"><tr><td colspan="11">Cargando…</td></tr></tbody>
   </table>
 </div>
 
@@ -43,15 +43,17 @@ async function buscar() {
   const ventas = await api.get("/api/ventas?" + params.toString());
   const tbody = document.getElementById("tabla");
   tbody.innerHTML = "";
-  if (!ventas.length) { tbody.innerHTML = '<tr><td colspan="9">Sin resultados</td></tr>'; return; }
+  if (!ventas.length) { tbody.innerHTML = '<tr><td colspan="11">Sin resultados</td></tr>'; return; }
   ventas.slice().reverse().forEach((v) => {
     const boleta = v.estado_kame === "ok" ? v.folio_kame
       : v.estado_kame === "mock" ? `${v.folio_kame} (prueba)` : "-";
     const tr = document.createElement("tr");
     tr.innerHTML = `<td>${v.ticket}</td><td>${new Date(v.creado_en).toLocaleString("es-CL")}</td>
-      <td>${v.servicio_nombre}</td><td>${fmtMonto(v.monto)}</td><td>${v.forma_pago}</td>
+      <td>${v.servicio_nombre}</td><td class="historial-cajero"></td><td class="historial-caja"></td><td>${fmtMonto(v.monto)}</td><td>${v.forma_pago}</td>
       <td>${v.rut_cliente || ""}</td><td>${boleta}</td><td>${v.es_pase_libre ? "✅" : ""}</td>
       <td>${v.es_pase_libre ? 'Acceso gratuito' : `<a href="/api/ventas/${v.ticket}/pdf" target="_blank">PDF</a>`}</td>`;
+    tr.querySelector(".historial-cajero").textContent = v.cajero || "Sin asignar";
+    tr.querySelector(".historial-caja").textContent = v.servicio_caja || "Sin asignar";
     if (!v.es_pase_libre) {
     const acciones = tr.lastElementChild;
     const boton = document.createElement("button");
@@ -67,7 +69,7 @@ async function buscar() {
       boton.textContent = "Enviando…";
       estado.textContent = "";
       try {
-        const res = await api.post(`/api/ventas/${encodeURIComponent(v.ticket)}/imprimir`, {});
+        const res = await equipoLocal.imprimir(v.ticket);
         estado.textContent = res.mensaje;
         estado.style.color = res.ok ? "var(--verde)" : "var(--rojo)";
       } catch (e) {

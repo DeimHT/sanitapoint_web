@@ -92,8 +92,8 @@ El menú muestra las opciones disponibles para tu cuenta.
 
 | Tipo de cuenta | Funciones principales |
 |---|---|
-| **Cajero** | Abrir y cerrar su caja, registrar ventas y pases libres, consultar el historial y gestionar clientes. |
-| **Supervisor** | Registrar retiros de dinero de las cajas. |
+| **Cajero** | Abrir y cerrar su caja, registrar ventas y pases libres, consultar su propio historial y gestionar clientes. |
+| **Supervisor** | Registrar retiros y consultar el historial completo con su cajero y servicio. |
 | **Contabilidad** | Consultar historial, reportes y cierres; administrar cuentas y contraseñas. |
 | **Administrador** | Acceder a todas las funciones y ajustar precios, impresora y configuración. |
 
@@ -125,7 +125,7 @@ Esta copia incluye los registros, los tickets guardados y otros archivos necesar
 | No abre la página | Comprueba que el computador principal esté encendido, que la ventana de SanitaPoint siga abierta y que ambos equipos estén conectados a la misma red. Usa la dirección indicada al iniciar. |
 | Aparece “No se encontró Python” | Pide al encargado que revise la instalación de Python en el computador principal. |
 | No puedes registrar una venta | Revisa que hayas abierto tu caja con la cuenta que estás usando. |
-| El ticket no sale en papel | Revisa que la impresora esté encendida, conectada y con papel. Abre el PDF de la venta y pide al administrador que revise la impresora en **Config**. No registres otra venta solo para imprimir. |
+| El ticket no sale en papel | Revisa que la impresora esté encendida, conectada y con papel. Abre el PDF de la venta y pide al administrador que revise la impresora en **Este computador**. No registres otra venta solo para imprimir. |
 | Aparece un error de KAME | Revisa el Historial y avisa al encargado. Antes de repetir la venta, hay que comprobar si KAME recibió la boleta. |
 | No aparece una opción del menú | Puede que tu cuenta no tenga permiso para usarla. Consulta al administrador. |
 
@@ -134,7 +134,9 @@ Para instalación manual y detalles técnicos, la persona encargada puede consul
 
 ## Configurar la impresora ONE R200
 
-En Windows, **Config → Actualizar lista** detecta impresoras instaladas y dispositivos USB del computador principal. Selecciona la R200 y pulsa **Imprimir prueba**: los datos se completan y guardan automáticamente. Si aparece con su nombre en Windows, usa esa opción para imprimir mediante su controlador. Si solo aparece como «Compatibilidad con impresoras USB», la conexión está detectada pero puede faltar el controlador necesario. La detección no instala ni cambia controladores.
+Instala la impresora con su controlador en cada computador de caja. En **Este computador**, elige si abrir la impresion al vender o usar el boton **Imprimir boleta**. Al imprimir, selecciona la impresora local en el dialogo del navegador, papel de 80 mm, sin margenes ni encabezados. Comprueba una boleta fisica en cada puesto antes de comenzar a operar.
+
+El sistema usa el navegador del puesto para imprimir; no envia trabajos a los dispositivos del servidor. La opcion automatica abre el dialogo: requiere confirmacion y no garantiza que salga papel. Puedes volver a imprimir una venta sin cobrar ni emitir nuevamente en KAME.
 
 ### Importar cuentas de acceso desde Excel
 
@@ -146,18 +148,24 @@ Pulsa **Revisar archivo** para ver las cuentas antes de crearlas. Las contraseñ
 
 En **Pases libres** puedes **Ingresar datos** manualmente o **Escanear cédula**. Usa una pistola que lea QR en modo USB teclado (HID), con Enter al terminar. La lectura se recibe en el campo enfocado del equipo donde está abierto el navegador. Puedes pegar el contenido para probar sin hardware. Se reconocen RUN/RUT y nombre cuando vienen como parámetros de la URL o campos JSON; si no vienen, completa los datos manualmente. No se abre el enlace ni se consulta Registro Civil.
 
-En **Configuración → Lector de cédulas**, activa/desactiva la lectura, consulta dispositivos candidatos del computador principal, guarda el dispositivo de referencia y prueba el QR sin crear una persona. Windows puede mostrar lectores como teclados genéricos: esta lista también incluye teclados y no vincula las pulsaciones exclusivamente a un dispositivo. Revisa los datos antes de guardar; una lectura no otorga un pase automáticamente.
+En **Este computador**, activa o desactiva el lector y prueba una lectura. Los ajustes de lector e impresion se guardan en el navegador de ese equipo y permanecen al cambiar de cajero. Usa siempre el mismo perfil del navegador y la misma direccion del servidor; borrar los datos del sitio o usar modo privado pierde estos ajustes. Cada pistola se conecta al computador donde se usa. Revisa los datos antes de guardar; una lectura no otorga un pase automaticamente.
 
-Después de actualizar el sistema, cierra la ventana del servidor y abre de nuevo **iniciar_servidor.bat**. El inicio instala el soporte Windows si falta. Recarga la página: un aviso «Not Found» en impresión o detección indica que debes comprobar que el servidor esté ejecutando esta versión.
+### Operacion de los dos banos
 
-1. Conecta la R200 por Ethernet a la red del computador principal y averigua su IP con la utilidad o documentación de la impresora. Mantén esa dirección fija o reservada en el router.
-2. En **Config → Ticket e impresora térmica**, selecciona **Red (ESC/POS)**, ingresa la IP y el puerto configurado en la impresora (habitualmente **9100**).
-3. Elige **Solo con botón Imprimir boleta** si quieres imprimir después de registrar cada venta. La opción **Automática** envía una copia al registrar la venta; pulsar el botón después envía otra copia.
-4. Pulsa **Imprimir prueba**: guarda los ajustes de impresora y envía un ticket de prueba sin registrar una venta ni emitir en KAME.
-5. Registra una venta y pulsa **Imprimir boleta**. El botón imprime la venta existente, sin volver a cobrar ni emitir una boleta en KAME. Si falla, puedes volver a intentarlo.
+Solo puede existir una caja abierta por servicio: si Pepe abre en Bano 1, Juan debe esperar a que Pepe cierre. Bano 2 puede operar al mismo tiempo. La restriccion tambien protege intentos simultaneos. Un cajero con turno abierto debe volver a su servicio antes de continuar o cerrar; salir de la sesion no cierra la caja.
 
-Para USB, la impresora debe estar conectada al computador principal que ejecuta Python. Ingresa sus identificadores **VID** y **PID** reales en hexadecimal (en Windows, Administrador de dispositivos → Propiedades → Detalles → Id. de hardware). El envío USB usa libusb y puede necesitar un controlador compatible; Ethernet suele ser más sencillo.
+El cajero ve solo las ventas de su cuenta, incluidos sus turnos anteriores. Tampoco puede acceder al PDF ni imprimir tickets ajenos por URL. Supervisor, Contabilidad y Administrador ven el historial completo con cajero y bano. Las tarifas, datos de empresa, pie del ticket, limites de pases y KAME son compartidos.
 
-El envío se realiza desde el servidor: si está alojado fuera del local necesita acceso a la red de la impresora. Conectar la impresora al equipo del navegador no le da acceso al servidor. El mensaje «enviado» confirma el envío de datos; comprueba físicamente el papel. El contenido conserva el estado de KAME y señala si es una prueba o un comprobante pendiente de emisión.
+Antes de actualizar, cierra los turnos de la version anterior y respalda la base. Al reiniciar se agrega la restriccion a bases existentes. Si ya hay dos turnos abiertos en un mismo servicio, el inicio informa el conflicto: deben conciliarse primero; el sistema no los cierra automaticamente ni reasigna ventas historicas.
 
 Al ingresar con Baño 2, los turnos nuevos no solicitan lecturas de ducha ni permiten vender ese servicio. Baño 1 mantiene las lecturas de baño y ducha. El servicio queda guardado en la caja durante todo el turno.
+
+
+### Actualizaciones desde GitHub privado
+
+La [seccion 5.7 de la guia](GUIA.md#57-actualizar-desde-un-repositorio-privado-de-github-sin-cuenta-personal-en-el-servidor) explica como usar una clave de despliegue de solo lectura, sin iniciar una cuenta personal en el servidor. Incluye una tarea que consulta main cada cinco minutos, espera a que cierren las cajas y respalda antes de actualizar, con recuperacion ante fallo de arranque. La clave y las tareas se configuran una vez en el servidor del terminal.
+
+
+### Boletas con timbre KAME
+
+La impresion termica recupera el XML firmado y representa su TED original como PDF417. **Ver PDF** entrega el PDF oficial. Configura el RUT emisor y los datos de resolucion en `.env` segun [la guia de integracion KAME](docs/KAME.md). Si el documento esta pendiente, reintenta desde Imprimir sin registrar una nueva venta. Las pruebas actuales son simuladas; falta validar una emision autorizada y el papel de la impresora del terminal.

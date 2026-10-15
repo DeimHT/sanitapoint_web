@@ -19,7 +19,8 @@ def _font(size, bold=False):
 
 
 def render_receipt(db, ticket_num, servicio_nombre, monto, forma_pago, folio_kame,
-                   estado_kame, rut_cliente, es_pase_libre, creado_en=None, servicio_codigo=None):
+                   estado_kame, rut_cliente, es_pase_libre, creado_en=None, servicio_codigo=None,
+                   documento_tributario=None):
     image = Image.new("RGB", (576, 12000), "white")
     draw = ImageDraw.Draw(image)
     y = 16
@@ -54,11 +55,17 @@ def render_receipt(db, ticket_num, servicio_nombre, monto, forma_pago, folio_kam
         draw.line((left, y, right, y), fill="black", width=2)
         y += 12
 
+    tributario = documento_tributario or {}
+    def empresa(clave, defecto=""):
+        campos = {"empresa_rut": "rut", "empresa_nombre": "razon_social", "empresa_giro": "giro",
+                  "empresa_direccion": "direccion", "empresa_ciudad": "ciudad"}
+        return tributario.get(campos.get(clave)) or get_config(db, clave, defecto)
+
     box_top = y
     y += 18
-    text(get_config(db, "empresa_rut", "") or "RUT no configurado", 27, True)
+    text(empresa("empresa_rut", "") or "RUT no configurado", 27, True)
     title = "PASE LIBRE" if es_pase_libre else (
-        "BOLETA ELECTRÓNICA" if estado_kame == "ok" and folio_kame else
+        "BOLETA ELECTRÓNICA" if estado_kame == "ok" and folio_kame and documento_tributario else
         "BOLETA DE PRUEBA" if estado_kame == "mock" else "COMPROBANTE DE VENTA")
     text(title, 28, True)
     text(str(folio_kame or ticket_num), 28, True, gap=18)
@@ -67,12 +74,12 @@ def render_receipt(db, ticket_num, servicio_nombre, monto, forma_pago, folio_kam
     office = get_config(db, "empresa_oficina_sii", "")
     if office:
         text("S.I.I. - " + office.upper(), 24, True)
-    text(get_config(db, "empresa_nombre", "Servicios Sanitarios").upper())
+    text(empresa("empresa_nombre", "Servicios Sanitarios").upper())
     for key in ("empresa_giro", "empresa_direccion", "empresa_ciudad"):
-        value = get_config(db, key, "")
+        value = empresa(key, "")
         if value:
             text(value.upper())
-    date = creado_en or datetime.now()
+    date = tributario.get("fecha") or creado_en or datetime.now()
     days = ("Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo")
     months = ("Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre")
     y += 12
@@ -90,8 +97,12 @@ def render_receipt(db, ticket_num, servicio_nombre, monto, forma_pago, folio_kam
     amount = f"{total:,}".replace(",", ".")
     text(f"1 UNID    x ${amount}    ${amount}", 23, align="right")
     rule()
+    for campo, etiqueta in (("neto", "Neto"), ("iva", "IVA"), ("exento", "Exento")):
+        if tributario.get(campo):
+            valor = f"{int(tributario[campo]):,}".replace(",", ".")
+            text(f"{etiqueta}: ${valor}", 21, align="right", gap=0)
     text(f"TOTAL: ${amount}", 38, True, "right", gap=18)
-    text(f"Ticket: {ticket_num} · {date:%H:%M}", 19, align="left")
+    text(f"Ticket: {ticket_num} · {(creado_en or datetime.now()):%H:%M}", 19, align="left")
     if not es_pase_libre:
         payments = {"efectivo": "Efectivo", "tarjetas": "Tarjetas", "transferencia": "Transferencia", "debito": "Débito", "credito": "Crédito"}
         text("Pago: " + payments.get(forma_pago, forma_pago), 19, align="left")
@@ -103,6 +114,18 @@ def render_receipt(db, ticket_num, servicio_nombre, monto, forma_pago, folio_kam
         text("MODO PRUEBA - Sin emisión real", 21, True)
     elif estado_kame != "ok" or not folio_kame:
         text("Boleta pendiente de emisión", 21, True)
+    elif documento_tributario:
+        timbre = tributario["imagen"]
+        if timbre.width > 576:
+            raise ValueError("El timbre no cabe en el ancho del ticket")
+        y += 10
+        image.paste(timbre, ((576 - timbre.width) // 2, y))
+        y += timbre.height
+        text("Timbre Electrónico SII", 19)
+        numero, fecha_resolucion = tributario.get("resolucion_numero"), tributario.get("resolucion_fecha")
+        if numero and fecha_resolucion:
+            text(f"Resolución N° {numero} de {fecha_resolucion}", 18)
+        text("Verifique documento: www.sii.cl", 18)
     else:
         text("Copia de venta sin timbre electrónico.\nDocumento tributario disponible en KAME.", 19)
     footer = get_config(db, "ticket_pie", "")

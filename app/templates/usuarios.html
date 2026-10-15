@@ -23,6 +23,7 @@
 
 <script>
 let usuarios = [];
+const tiposUsuario = { empleado: "Empleados", locatario: "Locatarios", empleado_publico: "Empleados Públicos" };
 function esc(valor) {
   return String(valor ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"}[c]));
 }
@@ -45,7 +46,7 @@ async function render(lista) {
     const check = await api.get(`/api/usuarios/${u.id}/pases/check`);
     const tr = document.createElement("tr");
     tr.innerHTML = `<td>${u.id}</td><td>${esc(u.nombre)}</td><td>${esc(u.rut || "")}</td>
-      <td>${esc(u.telefono || "")}</td><td>${u.tipo === "cliente" ? "Beneficiario" : esc(u.tipo)}</td>
+      <td>${esc(u.telefono || "")}</td><td>${esc(tiposUsuario[u.tipo] || (u.tipo === "cliente" ? "Beneficiario" : u.tipo))}</td>
       <td>${new Date(u.fecha_registro).toLocaleDateString("es-CL")}</td>
       <td>${check.usados} / ${check.maximo === 0 ? "Sin límite" : check.maximo}</td>
       <td>
@@ -75,9 +76,8 @@ function formUsuario(u, lectura = null) {
     <div class="row"><div style="flex:1"><label>Email</label><input id="f_email" value="${esc(u?.email || "")}"></div></div>
     <div class="row"><div style="flex:1"><label>Tipo</label>
       <select id="f_tipo">
-        <option value="cliente" ${u && u.tipo === "cliente" ? "selected" : ""}>Beneficiario</option>
-        <option value="empleado" ${u && u.tipo === "empleado" ? "selected" : ""}>empleado</option>
-        <option value="vip" ${u && u.tipo === "vip" ? "selected" : ""}>vip</option>
+        ${u && !tiposUsuario[u.tipo] ? '<option value="" disabled selected>Selecciona un tipo</option>' : ""}
+        ${Object.entries(tiposUsuario).map(([valor, nombre]) => `<option value="${valor}" ${u?.tipo === valor ? "selected" : ""}>${nombre}</option>`).join("")}
       </select></div></div>
     <div class="row"><div style="flex:1"><label>Notas</label><input id="f_notas" value="${esc(u?.notas || "")}"></div></div>
     <div class="row gap-top">
@@ -93,6 +93,7 @@ function formUsuario(u, lectura = null) {
       tipo: document.getElementById("f_tipo").value,
       notas: document.getElementById("f_notas").value.trim(),
     };
+    if (!body.tipo) { alert("Selecciona un tipo de pase libre"); return; }
     if (!body.nombre || !body.rut) { alert("Nombre y RUT son obligatorios"); return; }
     const boton = document.getElementById("ok");
     if (boton.disabled) return;
@@ -127,7 +128,7 @@ async function verPases(u) {
 document.getElementById("btn_nuevo").addEventListener("click", () => formUsuario(null));
 document.getElementById("btn_escanear").addEventListener("click", async () => {
   let config;
-  try { config = await api.get("/api/usuarios/lector/config"); }
+  try { config = equipoLocal.lector(); }
   catch (e) { alert(e.message); return; }
   if (config.modo === "ninguno") { alert("Activa el lector USB teclado en Configuración para usar esta opción."); return; }
   abrirModal(`<h3>Escanear cédula de identidad</h3>

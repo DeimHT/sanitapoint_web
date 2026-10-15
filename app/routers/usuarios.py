@@ -39,8 +39,7 @@ def listar_usuarios(solo_activos: bool = True, db: Session = Depends(get_db)):
 
 @router.get("/lector/config")
 def configuracion_lector(db: Session = Depends(get_db)):
-    return {"modo": get_config(db, "lector_modo", "teclado"),
-            "nombre": get_config(db, "lector_nombre", "USB teclado")}
+    return {"modo": "teclado", "nombre": "USB teclado local", "configuracion": "navegador"}
 
 
 @router.get("/{usuario_id}", response_model=UsuarioOut)

@@ -2,7 +2,7 @@
 from datetime import datetime
 
 from sqlalchemy import (
-    Boolean, Column, DateTime, ForeignKey, Integer, String, Text,
+    Boolean, Column, DateTime, ForeignKey, Index, Integer, String, Text, text,
 )
 from sqlalchemy.orm import relationship
 
@@ -46,6 +46,9 @@ class Servicio(Base):
 
 class Caja(Base):
     __tablename__ = "cajas"
+    __table_args__ = (Index("uq_caja_abierta_servicio", "servicio", unique=True,
+                           sqlite_where=text("estado = 'abierta'"),
+                           postgresql_where=text("estado = 'abierta'")),)
 
     id = Column(Integer, primary_key=True)
     fecha_apertura = Column(DateTime, default=datetime.now)
@@ -89,7 +92,7 @@ class Usuario(Base):
     rut = Column(String, unique=True, nullable=True)
     telefono = Column(String, default="")
     email = Column(String, default="")
-    tipo = Column(String, default="cliente")  # cliente | empleado | vip
+    tipo = Column(String, default="empleado")  # empleado | locatario | empleado_publico
     activo = Column(Boolean, default=True, nullable=False)
     fecha_registro = Column(DateTime, default=datetime.now)
     notas = Column(Text, default="")
@@ -109,6 +112,10 @@ class Venta(Base):
     rut_cliente = Column(String, nullable=True)
     folio_kame = Column(String, nullable=True)
     kame_documento_id = Column(String, nullable=True)
+    kame_rut_emisor = Column(String, nullable=True)
+    kame_tipo_documento = Column(String, nullable=True)
+    kame_timbre_disponible = Column(Boolean, default=False, nullable=False)
+    kame_error_documento = Column(Text, default="", nullable=False)
     estado_kame = Column(String, default="omitido")  # ok | error | omitido
     caja_id = Column(Integer, ForeignKey("cajas.id"), nullable=True)
     usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True)

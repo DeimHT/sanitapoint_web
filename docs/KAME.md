@@ -1,0 +1,51 @@
+# Documentos con timbre de KAME
+
+La integracion se basa en la documentacion API Siigo Kame Chile compartida para este proyecto. No necesita acceso a una boleta ya emitida para ejecutar las pruebas simuladas.
+
+## Contrato utilizado
+
+- [Autenticacion](https://mzujlb48px.apidog.io/api-auth0-34066797e0): OAuth client credentials, token Bearer.
+- [Registro de boleta](https://mzujlb48px.apidog.io/registro-de-venta-boleta-34273186e0): `POST /api/Documento/addVenta`. Se conservan `Folio` e `Id`.
+- [XML firmado](https://mzujlb48px.apidog.io/obtener-xml-registro-de-ventas-38233649e0): `GET /api/Documento/getDocumentoXML/{rutEmisor}/{tipoDocumento}/{folio}`. Se lee `Xml` de la respuesta, que contiene el TED y la firma. El RUT corresponde a la empresa emisora, sin puntos y con guion; para la boleta afecta usamos `39`.
+- [PDF oficial](https://mzujlb48px.apidog.io/obtener-pdf-registro-de-ventas-38139918e0): `GET /api/Documento/getDocumentoPDF/{rutEmisor}/{tipoDocumento}/{folio}`. Se decodifica `ArchivoBase64PDF`. El ejemplo publicado es un texto con esa etiqueta; tambien se admite el objeto JSON con ese campo. El PDF se entrega sin reconstruir ni modificar sus paginas.
+
+Las consultas de documentos existentes nunca llaman a `addVenta`. No se presupone una URL de descarga en la respuesta de emision ni se usa el identificador interno como folio.
+
+## Configuracion del servidor
+
+En `.env` configura las credenciales existentes y `KAME_RUT`, con el RUT de la empresa emisora. Los documentos nuevos guardan RUT y tipo junto a la venta para conservar su identidad aunque cambie la configuracion. Para documentos anteriores sin ese dato se utiliza el RUT configurado al recuperarlos.
+
+Cuando el XML individual no contiene la caratula con la resolucion, configura los datos reales del emisor:
+
+```dotenv
+KAME_RESOLUCION_NUMERO=NUMERO_REAL_DEL_EMISOR
+KAME_RESOLUCION_FECHA=AAAA-MM-DD
+```
+
+No copies la resolucion de los ejemplos. La impresion termica solicita estos datos si faltan; el PDF oficial se puede recuperar independientemente. Reinicia despues de cambiar `.env` e instala las dependencias actualizadas de `requirements.txt`.
+
+## Venta, impresion y recuperacion
+
+Despues de que KAME confirma la emision, se intenta recuperar el XML con el mismo cliente y token. La venta permanece emitida aunque falle esa consulta. La misma peticion de venta espera el timbre: hasta seis consultas de lectura, con pausas de 1, 2, 3, 5 y 5 segundos y un presupuesto de espera de 20 segundos para recuperarlo. Solo se reintentan errores transitorios o XML aun no disponible; nunca se repite la emision para conseguir su timbre.
+
+Para el ticket termico se conserva el texto original del TED, incluidos sus caracteres ISO-8859-1 y saltos de linea. Se cotejan RUT emisor, tipo, folio, fecha, receptor y monto con el documento y la venta. Se rechazan XML con DTD, entidades o datos que no coincidan. Esta comprobacion de correspondencia no es una verificacion criptografica independiente de la firma ni una consulta de aceptacion ante el SII.
+
+El PDF417 utiliza compactacion binaria, correccion nivel 5 y modulos enteros. El ticket de 80 mm muestra la informacion tributaria recibida, el timbre y los datos de resolucion. La consulta **Ver PDF** recupera el documento oficial de KAME, cuyo formato de pagina lo determina KAME. Si el timbre no cabe en el formato termico, se indica usar ese PDF sin reducir el codigo hasta hacerlo ilegible. Referencias de representacion: [instructivo PDF417 del SII](https://www.sii.cl/factura_electronica/factura_mercado/instructivo_emision.pdf) y [dimensiones para boletas](https://www.sii.cl/preguntas_frecuentes/bol_electr_vtas_serv/001_380_6277.htm).
+
+Si esta activada la impresion automatica de **Este computador**, se abre el dialogo del navegador cuando el timbre esta listo. Si falta, la atencion se muestra sin completar y se bloquean nuevos cobros en esa caja, incluso desde otra pestana; al recargar se recupera el ticket pendiente. **Imprimir boleta** reintenta recuperar el documento existente, sin volver a cobrar ni emitir. No se sustituye silenciosamente una boleta real por un comprobante sin timbre. Los pases libres siguen sin documento tributario ni impresion.
+
+XML y PDF se guardan bajo `data/documentos_kame`, fuera de los archivos publicos. Se verifican permisos de la venta antes de acceder a ellos. El cache evita consultas repetidas y permite reimprimir documentos ya recuperados sin internet. Los errores no se guardan como documentos validos. Respalda esta carpeta aparte si necesitas conservar las copias locales para operar sin conexion despues de restaurar: el respaldo diario SQLite incluye los registros, pero no esos archivos.
+
+La documentacion general de KAME establece un limite por IP; el cache, las pausas entre consultas y el limite de intentos reducen peticiones. [Politica de trafico](https://mzujlb48px.apidog.io/informaci%C3%B3n-general-8702595f0).
+
+## Validacion
+
+Las pruebas automatizadas usan respuestas simuladas y firmas sinteticas que no tienen validez tributaria. Cubren autenticacion, rutas documentadas, Base64, integridad de transporte, identidad, cache, recuperacion, errores y acceso por cajero. Tambien se comprobo con un lector independiente que el PDF417 generado recupera exactamente los bytes del TED sintetico, tanto aislado como dentro del ticket completo.
+
+No se emitieron boletas reales ni se utilizaron credenciales de produccion en estas pruebas. Queda pendiente comprobar el flujo con una emision autorizada en KAME y escanear el papel de la impresora instalada, usando 80 mm, sin margenes ni encabezados y sin reducir la escala.
+
+### Emision durante la atencion
+
+Antes del primer cobro en modo real son obligatorios las credenciales, KAME_USER, KAME_RUT y los datos KAME_RESOLUCION_NUMERO y KAME_RESOLUCION_FECHA. La configuracion incompleta rechaza la operacion sin registrar otra venta. Activa la impresion automatica en **Este computador** para abrir la impresion al recibir el timbre.
+
+La API publicada no documenta una opcion para forzar la disponibilidad inmediata del XML ni permite garantizar que KAME responda durante una interrupcion. El sistema espera y recupera el documento de la misma emision; no genera un timbre local inventado ni presenta una boleta sin timbre como terminada. Si la emision quedo en curso por un reinicio o hay una respuesta de emision ambigua, hay que comprobar el documento en KAME antes de cualquier nueva emision. No existe reemision automatica ante un timeout.

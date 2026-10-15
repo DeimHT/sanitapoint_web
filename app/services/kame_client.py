@@ -103,7 +103,7 @@ class KameAPI:
         self.rut      = self._config('KAME_RUT', '')
         self.razon    = self._config('KAME_RAZON_SOCIAL', '')
 
-    def _obtener_token(self, force=False) -> str:
+    def _obtener_token(self, force=False, timeout=None) -> str:
         """Obtiene y conserva el token Auth0 hasta poco antes de que expire."""
         self._reload()
         if self._static_token:
@@ -122,7 +122,7 @@ class KameAPI:
                 'audience': f'{self.base_url}/api',
                 'grant_type': 'client_credentials',
             },
-            timeout=self.timeout,
+            timeout=self.timeout if timeout is None else timeout,
         )
         response.raise_for_status()
         data = response.json()
@@ -161,6 +161,58 @@ class KameAPI:
             return {'ok': False, 'mensaje': 'Tiempo de espera agotado'}
         except Exception as e:
             return {'ok': False, 'mensaje': 'Respuesta de autenticación KAME inválida'}
+
+    def obtener_documento(self, rut_emisor: str, tipo: str, folio: str, formato: str):
+        """Consulta un documento existente; nunca invoca addVenta.
+
+        Contrato: https://mzujlb48px.apidog.io/obtener-xml-registro-de-ventas-38233649e0
+        y obtener-pdf-registro-de-ventas-38139918e0. Reutiliza el token de emision.
+        """
+        from app.services.documentos_kame import DocumentoKameError, DocumentoKameTemporal, normalizar_rut
+        import re
+        rut_emisor = normalizar_rut(rut_emisor)
+        if tipo not in ("39", "41") or not re.fullmatch(r"[1-9][0-9]*", str(folio)) or formato not in ("XML", "PDF"):
+            raise DocumentoKameError("Los datos del documento KAME no son válidos.")
+        if not self.disponible():
+            raise DocumentoKameError("Faltan credenciales KAME para recuperar la boleta emitida.")
+        def tiempo_disponible():
+            limite = getattr(self, "_documento_deadline", None)
+            if limite is None:
+                return self.timeout
+            restante = limite - time.monotonic()
+            if restante <= 0:
+                raise DocumentoKameTemporal("Se agoto la espera del timbre de esta boleta.")
+            return (min(3, restante / 2), min(5, restante / 2))
+        try:
+            self.token = self._obtener_token(timeout=tiempo_disponible())
+            url = f"{self.base_url}/api/Documento/getDocumento{formato}/{rut_emisor}/{tipo}/{folio}"
+            respuesta = requests.get(url, headers=self._headers(), timeout=tiempo_disponible(), allow_redirects=False)
+            if respuesta.status_code == 401 and self.client_id and not self._static_token:
+                self.token = self._obtener_token(force=True, timeout=tiempo_disponible())
+                respuesta = requests.get(url, headers=self._headers(), timeout=tiempo_disponible(), allow_redirects=False)
+            if respuesta.status_code != 200:
+                mensaje = ("KAME aún no entrega el documento emitido. Reintenta Imprimir sin registrar otra venta."
+                           if respuesta.status_code in (404, 409, 202) else
+                           "No se pudo recuperar el documento de KAME. Reintenta Imprimir sin registrar otra venta.")
+                error = DocumentoKameTemporal if respuesta.status_code in (202, 404, 409, 429, 500, 502, 503, 504) else DocumentoKameError
+                raise error(mensaje)
+            if len(respuesta.content) > 16 * 1024 * 1024:
+                raise DocumentoKameError("El documento de KAME supera el tamaño permitido.")
+            try:
+                datos = respuesta.json()
+            except ValueError:
+                # El ejemplo PDF publicado es un texto con etiqueta, no un JSON.
+                if formato != "PDF" or not respuesta.text.lstrip().startswith("ArchivoBase64PDF"):
+                    raise DocumentoKameError("KAME devolvio un documento con formato no reconocido.")
+                datos = respuesta.text
+            if isinstance(datos, dict) and (datos.get("Error") or (
+                    datos.get("Estado") and str(datos["Estado"]).lower() != "ok")):
+                raise DocumentoKameTemporal("KAME todavía no tiene disponible el documento. Reintenta Imprimir.")
+            return datos
+        except requests.RequestException as error_red:
+            clase = DocumentoKameError if (error_red.response is not None and
+                    error_red.response.status_code in (400, 401, 403, 404)) else DocumentoKameTemporal
+            raise clase("No se pudo conectar con KAME para recuperar el documento. La venta no debe repetirse.") from None
 
     def emitir_boleta(self, venta: dict, servicio: dict) -> dict:
         """
@@ -303,6 +355,28 @@ class KameAPI:
                     'mensaje': 'Ocurrió un error al comunicarse con KAME. Revisa la configuración KAME.'}
 
 
+def verificar_configuracion_punto_venta(db):
+    """Detecta configuraciones incompletas antes de registrar un cobro."""
+    from app.services.documentos_kame import DocumentoKameError, normalizar_rut
+    from datetime import date
+    client = KameAPI(db)
+    modo = client._config("KAME_MODO", "real").strip().lower()
+    if modo == "mock":
+        return
+    if modo != "real":
+        raise DocumentoKameError("Configura KAME_MODO como real o mock antes de vender.")
+    if not client.disponible() or not client.usuario:
+        raise DocumentoKameError("Completa las credenciales y KAME_USER antes de vender.")
+    normalizar_rut(client._config("KAME_RUT", ""))
+    numero = str(client._config("KAME_RESOLUCION_NUMERO", ""))
+    if not numero.isascii() or not numero.isdigit():
+        raise DocumentoKameError("Configura KAME_RESOLUCION_NUMERO antes de vender para entregar la boleta completa.")
+    try:
+        date.fromisoformat(client._config("KAME_RESOLUCION_FECHA", ""))
+    except (ValueError, TypeError):
+        raise DocumentoKameError("Configura KAME_RESOLUCION_FECHA con formato AAAA-MM-DD antes de vender.") from None
+
+
 def emitir_boleta(db, servicio_nombre, monto_total, forma_pago, rut_cliente=None, ticket_num=""):
     """Mantiene el contrato del POS; solo simula en modo mock explícito."""
     client = KameAPI(db)
@@ -318,10 +392,23 @@ def emitir_boleta(db, servicio_nombre, monto_total, forma_pago, rut_cliente=None
          'ticket_num': ticket_num, 'forma_pago': forma_pago},
         {'nombre': servicio_nombre},
     )
-    if result['ok'] and ticket_num and result.get('id'):
+    if result['ok'] and ticket_num:
         from app.models import Venta
+        from app.services.documentos_kame import preparar_timbre
         venta = db.query(Venta).filter(Venta.ticket == ticket_num).first()
         if venta is not None:
-            venta.kame_documento_id = result['id']
+            venta.kame_documento_id = result.get('id') or None
+            venta.kame_rut_emisor = client._config('KAME_RUT', '') or None
+            venta.kame_tipo_documento = '39'
+            venta.folio_kame = result['folio']
+            venta.estado_kame = 'ok'
             db.commit()
+            # Una falla al obtener el timbre nunca convierte una emision en fallida.
+            try:
+                preparar_timbre(db, venta, client=client, exigir=False, esperar=True)
+            except Exception:
+                # La emision confirmada no se repite por un fallo local de impresion.
+                import logging
+                logging.getLogger(__name__).exception("No se pudo preparar la impresion de la boleta emitida")
+                db.rollback()
     return (result['folio'], 'ok') if result['ok'] else (result['mensaje'], 'error')

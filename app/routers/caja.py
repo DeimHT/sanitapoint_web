@@ -2,6 +2,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -40,9 +41,14 @@ def _ultima_caja_cerrada(db: Session, cuenta_id: int) -> Caja | None:
 
 @router.get("", response_model=CajaOut | None)
 def obtener_caja_abierta(db: Session = Depends(get_db),
-                         cuenta: Cuenta = Depends(get_current_cuenta)):
+                         cuenta: Cuenta = Depends(get_current_cuenta), request: Request = None):
     caja = _caja_abierta(db, cuenta.id)
     return resumen_caja(db, caja) if caja else None
+
+
+def comprobar_servicio(caja: Caja, request: Request | None):
+    if request and caja.servicio and caja.servicio != request.session.get("servicio"):
+        raise HTTPException(409, "Tu caja abierta pertenece a otro servicio. Inicia sesion en ese servicio para continuar.")
 
 
 def bloquear_caja(db: Session, caja_id: int) -> Caja:
@@ -69,9 +75,12 @@ def ultimo_cierre(db: Session = Depends(get_db), cuenta: Cuenta = Depends(get_cu
 
 
 @router.get("/sugerencia-apertura", dependencies=[Depends(require_cap(CAJA_APERTURA))])
-def sugerencia_apertura(db: Session = Depends(get_db), cuenta: Cuenta = Depends(get_current_cuenta)):
-    """Lecturas finales del último turno del usuario, como referencia."""
-    ultima = _ultima_caja_cerrada(db, cuenta.id)
+def sugerencia_apertura(db: Session = Depends(get_db), cuenta: Cuenta = Depends(get_current_cuenta),
+                        request: Request = None):
+    """El torniquete fisico continua entre cajeros del mismo servicio."""
+    servicio = request.session.get("servicio") if request else None
+    ultima = (db.query(Caja).filter(Caja.estado == "cerrada", Caja.servicio == servicio)
+              .order_by(Caja.id.desc()).first()) if servicio else _ultima_caja_cerrada(db, cuenta.id)
     return {
         "torniquete_bano_inicial": ultima.torniquete_bano_final if ultima else None,
         "torniquete_ducha_inicial": ultima.torniquete_ducha_final if ultima else None,
@@ -84,11 +93,18 @@ def abrir_caja(body: AbrirCajaIn, db: Session = Depends(get_db),
     servicio = request.session.get("servicio") if request else None
     if servicio != "Baño 2" and body.torniquete_ducha_inicial is None:
         raise HTTPException(400, "Debes ingresar el torniquete de ducha inicial")
+    if request and servicio not in ("Baño 1", "Baño 2"):
+        raise HTTPException(400, "Selecciona el servicio al iniciar sesion")
     # Serializa aperturas del mismo usuario sin bloquear a otros en PostgreSQL.
     db.execute(update(Cuenta).where(Cuenta.id == cuenta.id).values(username=Cuenta.username))
     if _caja_abierta(db, cuenta.id):
         db.rollback()
         raise HTTPException(400, "Ya hay una caja abierta")
+    ocupada = db.query(Caja).filter(Caja.estado == "abierta", Caja.servicio == servicio).first() if servicio else None
+    if ocupada:
+        operador = ocupada.operador
+        db.rollback()
+        raise HTTPException(409, f"{servicio} tiene una caja abierta por {operador}. Debe cerrar su turno primero.")
     caja = Caja(
         cuenta_id=cuenta.id,
         servicio=servicio,
@@ -99,18 +115,23 @@ def abrir_caja(body: AbrirCajaIn, db: Session = Depends(get_db),
         estado="abierta",
     )
     db.add(caja)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "El servicio ya tiene una caja abierta. Espera el cierre del turno.")
     db.refresh(caja)
     return resumen_caja(db, caja)
 
 
 @router.post("/cerrar", response_model=CajaOut, dependencies=[Depends(require_cap(CAJA_CIERRE))])
 def cerrar_caja(body: CerrarCajaIn, db: Session = Depends(get_db),
-                cuenta: Cuenta = Depends(get_current_cuenta)):
+                cuenta: Cuenta = Depends(get_current_cuenta), request: Request = None):
     caja = _caja_abierta(db, cuenta.id)
     if not caja:
         raise HTTPException(400, "No hay caja abierta")
 
+    comprobar_servicio(caja, request)
     caja = bloquear_caja(db, caja.id)
     for tipo, etiqueta in (("bano", "baño"), ("ducha", "ducha")):
         inicial = getattr(caja, f"torniquete_{tipo}_inicial")

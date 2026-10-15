@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Este computador - SanitaPoint{% endblock %}
+{% block content %}
+<div class="equipo-pagina">
+  <header class="equipo-portada">
+    <div><span class="configuracion-eyebrow">AJUSTES DEL PUESTO</span>
+      <h1>Este computador</h1>
+      <p>Configura la impresión y el lector que usas en esta caja.</p>
+    </div>
+    <span class="equipo-insignia"><span aria-hidden="true"></span>Solo en este equipo</span>
+  </header>
+
+  <div class="equipo-secciones">
+    <section class="equipo-panel" aria-labelledby="titulo_impresora">
+      <div class="equipo-panel-titulo">
+        <span class="equipo-icono" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 8V3h10v5M7 17H4V9h16v8h-3"/><path d="M7 14h10v7H7zM16 11h1"/></svg></span>
+        <div><h2 id="titulo_impresora">Impresora</h2><p>Boletas y comprobantes de venta.</p></div>
+      </div>
+      <div class="equipo-campo">
+        <label for="impresora_automatica">Al registrar una venta</label>
+        <select id="impresora_automatica" aria-describedby="ayuda_impresion"><option value="0">Imprimir con el botón de la venta</option><option value="1">Abrir impresión automáticamente</option></select>
+        <p id="ayuda_impresion" class="equipo-ayuda">La impresora se elige en el diálogo de impresión del navegador.</p>
+      </div>
+      <div class="equipo-indicacion">
+        <strong>Prepara tu impresora</strong>
+        <p>Instálala en este computador y usa papel de <b>80 mm</b>, sin márgenes ni encabezados.</p>
+        <p>Confirma cada impresión en el diálogo del navegador.</p>
+      </div>
+    </section>
+
+    <section class="equipo-panel" aria-labelledby="titulo_lector">
+      <div class="equipo-panel-titulo">
+        <span class="equipo-icono" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m8 0h5v-5M7 7v10m4-10v10m3-10v10m3-10v10"/></svg></span>
+        <div><h2 id="titulo_lector">Lector de cédulas</h2><p>Lectura de QR para los pases libres.</p></div>
+      </div>
+      <div class="equipo-campo">
+        <label for="lector_modo">Modo de lectura</label>
+        <select id="lector_modo" aria-describedby="ayuda_lector"><option value="teclado">USB teclado (HID)</option><option value="ninguno">Desactivado</option></select>
+        <p id="ayuda_lector" class="equipo-ayuda">Conecta la pistola a este equipo y configúrala para terminar con Enter.</p>
+      </div>
+      <div class="equipo-prueba">
+        <label for="prueba_lector">Prueba tu lector</label>
+        <div class="equipo-prueba-fila"><input id="prueba_lector" placeholder="Haz clic aquí y escanea una cédula" maxlength="8192" autocomplete="off"><button type="button" class="btn equipo-boton-secundario" id="probar_lector">Revisar</button></div>
+        <p id="resultado_lector" class="equipo-resultado" role="status"></p>
+      </div>
+    </section>
+  </div>
+
+  <footer class="equipo-pie">
+    <div><strong>Tus ajustes quedan en este puesto</strong><p>Se conservan al cambiar de cajero. Usa siempre el mismo navegador.</p></div>
+    <button type="button" class="btn btn-verde" id="guardar_equipo">Guardar cambios</button>
+    <p id="resultado_equipo" class="equipo-resultado" role="status"></p>
+  </footer>
+  <details class="equipo-detalles"><summary>Acerca de los ajustes locales</summary><p>Usa siempre la misma dirección del servidor. El modo privado y borrar los datos del sitio eliminan estos ajustes. Las tarifas y la configuración general se administran de forma compartida.</p></details>
+</div>
+<script src="/static/js/cedula.js?v=1"></script>
+<script>
+const ajustes = equipoLocal.leer();
+for (const clave of ["impresora_automatica", "lector_modo"]) document.getElementById(clave).value = ajustes[clave];
+document.getElementById("guardar_equipo").onclick = () => {
+  try {
+    equipoLocal.guardar({ impresora_automatica: document.getElementById("impresora_automatica").value, lector_modo: document.getElementById("lector_modo").value });
+    document.getElementById("resultado_equipo").textContent = "Ajustes guardados en este computador.";
+  } catch (e) { document.getElementById("resultado_equipo").textContent = "No se pudieron guardar los ajustes: " + e.message; }
+};
+function probarLectura() {
+  const campo = document.getElementById("prueba_lector");
+  try { const datos = leerCedula(campo.value); document.getElementById("resultado_lector").textContent = "Lectura correcta: " + datos.rut; campo.value = ""; }
+  catch (e) { document.getElementById("resultado_lector").textContent = e.message; }
+}
+document.getElementById("probar_lector").onclick = probarLectura;
+document.getElementById("prueba_lector").onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); probarLectura(); } };
+</script>
+{% endblock %}

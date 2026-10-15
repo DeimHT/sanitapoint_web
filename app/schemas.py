@@ -142,6 +142,11 @@ class VentaIn(BaseModel):
 
 
 class VentaOut(BaseModel):
+    kame_timbre_disponible: bool = False
+    kame_error_documento: str = ""
+    cajero: str = ""
+    cuenta_id: int | None = None
+    servicio_caja: str | None = None
     id: int
     ticket: str
     creado_en: datetime
@@ -165,7 +170,7 @@ class UsuarioIn(BaseModel):
     rut: str
     telefono: str = ""
     email: str = ""
-    tipo: str = "cliente"
+    tipo: Literal["empleado", "locatario", "empleado_publico"] = "empleado"
     notas: str = ""
 
 
