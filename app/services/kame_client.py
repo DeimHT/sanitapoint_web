@@ -324,6 +324,8 @@ class KameAPI:
             if r.status_code in (200, 201):
                 ok = str(data.get('Estado', '')).lower() == 'ok' and not data.get('Error') and bool(data.get('Folio'))
                 error = data.get('Error')
+                if not ok:
+                    print(f'[KAME] addVenta sin folio (Estado={data.get("Estado")}): {str(error)[:500]}', flush=True)
                 return {
                     'ok':      ok,
                     'folio':   str(data.get('Folio') or ''),
@@ -334,6 +336,7 @@ class KameAPI:
                     'detalle_tecnico': error,
                 }
             error = data.get('Error') or data.get('message') or r.text[:1000]
+            print(f'[KAME] addVenta rechazada (HTTP {r.status_code}): {str(error)[:500]}', flush=True)
             return {
                 'ok':      False,
                 'folio':   None, 'id': None, 'pdf_url': None,
