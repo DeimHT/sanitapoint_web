@@ -14,6 +14,11 @@ function leerCedula(texto) {
   }
   let rut = String(campos.run || campos.rut || "").replace(/\./g, "").replace(/\s/g, "").toUpperCase();
   if (!rut && /^\d{6,8}-[0-9k]$/i.test(texto.trim())) rut = texto.trim().toUpperCase();
+  // Lector con distribucion de teclado distinta a la de Windows: los simbolos de la URL
+  // llegan cambiados (RUN=20622632-3 -> RUN¿20622632'3) pero los digitos no. El digito
+  // verificador se sigue validando abajo.
+  const deformado = !rut && texto.match(/RUN.(\d{6,8}).([0-9K])(?![0-9K])/i);
+  if (deformado) rut = `${deformado[1]}-${deformado[2].toUpperCase()}`;
   if (!/^\d{6,8}-[0-9K]$/.test(rut)) throw new Error("Este QR no contiene un RUN/RUT legible. Ingresa los datos manualmente.");
   const [numero, dv] = rut.split("-");
   let suma = 0, factor = 2;

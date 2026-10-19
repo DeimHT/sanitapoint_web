@@ -3,6 +3,8 @@ const { leerCedula } = require('../app/static/js/cedula.js');
 assert.deepEqual(leerCedula('https://example.test/?RUN=12345678-5&name=Persona%20Prueba'), { rut: '12345678-5', nombre: 'Persona Prueba' });
 assert.deepEqual(leerCedula('https://example.test/?RUN=12345678-5'), { rut: '12345678-5', nombre: '' });
 assert.deepEqual(leerCedula('{"rut":"12.345.678-5","nombre":"Persona"}'), { rut: '12345678-5', nombre: 'Persona' });
+assert.deepEqual(leerCedula("httpsÑ--portal.sidiv.registrocivil.cl-docstatus_RUN¿20622632'3/type¿CEDULA/serial¿524625317/mrz¿524625317901061753106176"), { rut: '20622632-3', nombre: '' });
+assert.throws(() => leerCedula("httpsÑ--portal.sidiv.registrocivil.cl-docstatus_RUN¿20622632'4/type¿CEDULA"), /verificador/);
 assert.throws(() => leerCedula('https://example.test/solo-verificacion'), /manual/);
 assert.throws(() => leerCedula('12345678-0'), /verificador/);
 assert.throws(() => leerCedula(''), /vacía/);
