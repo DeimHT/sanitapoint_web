@@ -18,9 +18,157 @@ def _font(size, bold=False):
     return ImageFont.load_default(size=size)
 
 
+LOGO_TICKET = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static", "img", "logo_ticket.png")
+
+
+def _lineas(draw, value, font, width):
+    """Parte el texto por palabras (y por caracteres si una palabra no cabe)."""
+    lines = []
+    for paragraph in str(value).splitlines() or [""]:
+        line = ""
+        for word in paragraph.split():
+            candidate = (line + " " + word).strip()
+            if draw.textlength(candidate, font=font) <= width:
+                line = candidate
+                continue
+            if line:
+                lines.append(line)
+            line = ""
+            for char in word:
+                if draw.textlength(line + char, font=font) > width:
+                    lines.append(line)
+                    line = char
+                else:
+                    line += char
+        lines.append(line)
+    return lines
+
+
+def _logo():
+    try:
+        with Image.open(LOGO_TICKET) as original:
+            logo = original.convert("RGBA")
+    except OSError:
+        return None
+    logo = Image.alpha_composite(Image.new("RGBA", logo.size, "white"), logo).convert("RGB")
+    logo.thumbnail((210, 110))
+    return logo
+
+
+def _render_boleta_simple(db, servicio_nombre, monto, folio_kame, creado_en, tributario):
+    """Boleta electrónica en el formato 'Simple' de KAME, armada con el XML emitido."""
+    ancho, left, right = 576, 16, 560
+    image = Image.new("RGB", (ancho, 6000), "white")
+    draw = ImageDraw.Draw(image)
+    y = 16
+
+    def escribir(value, size=21, bold=False, x=left, max_x=right, gap=6, align="left"):
+        nonlocal y
+        font = _font(size, bold)
+        for line in _lineas(draw, value, font, max_x - x):
+            w = draw.textlength(line, font=font)
+            xx = x if align == "left" else (x + max_x - w) / 2 if align == "center" else max_x - w
+            draw.text((xx, y), line, font=font, fill="black")
+            y += size + gap
+
+    def regla():
+        nonlocal y
+        draw.line((left, y, right, y), fill="black", width=2)
+        y += 14
+
+    def moneda(valor):
+        return "$" + f"{int(valor):,}".replace(",", ".")
+
+    rut = tributario.get("rut") or ""
+    if "-" in rut and rut.split("-")[0].isdigit():
+        cuerpo, dv = rut.rsplit("-", 1)
+        rut = f"{int(cuerpo):,}".replace(",", ".") + "-" + dv
+
+    # Cabecera: logo a la izquierda y recuadro con RUT, tipo y folio.
+    logo = _logo()
+    caja_x0, caja_x1 = (250, right) if logo else (88, 488)
+    caja_top = y
+    y += 12
+    escribir(f"RUT   {rut}", 25, True, caja_x0 + 6, caja_x1 - 6, align="center")
+    escribir("BOLETA ELECTRÓNICA", 24, True, caja_x0 + 6, caja_x1 - 6, align="center")
+    escribir(f"Nº {folio_kame}", 25, True, caja_x0 + 6, caja_x1 - 6, align="center", gap=2)
+    y += 10
+    caja_bottom = y
+    draw.rectangle((caja_x0, caja_top, caja_x1, caja_bottom), outline="black", width=3)
+    if logo:
+        image.paste(logo, (left, caja_top + (caja_bottom - caja_top - logo.height) // 2))
+    y = caja_bottom + 12
+    oficina = get_config(db, "empresa_oficina_sii", "")
+    if oficina:
+        escribir("S.I.I. - " + oficina.upper(), 23, True, align="center", gap=8)
+
+    # Datos del emisor y fechas.
+    emisor_top = y
+    y += 10
+    x = left + 8
+    escribir(tributario.get("razon_social") or get_config(db, "empresa_nombre", ""), 24, True, x, right - 8, gap=8)
+    for etiqueta, valor in (("Giro", tributario.get("giro")), ("Dirección", tributario.get("direccion")),
+                            ("Ciudad", tributario.get("ciudad")),
+                            ("Fono", get_config(db, "empresa_telefono", ""))):
+        if valor:
+            escribir(f"{etiqueta}: {valor}", 21, False, x, right - 8, gap=8)
+    emision = creado_en or datetime.now()
+    fecha = tributario.get("fecha") or emision.date()
+    escribir(f"Fecha Documento: {fecha:%d/%m/%Y}", 21, False, x, right - 8, gap=8)
+    escribir(f"Fecha Emisión: {emision:%d/%m/%Y - %H:%M:%S}", 21, False, x, right - 8, gap=8)
+    y += 6
+    draw.rectangle((left, emisor_top, right, y), outline="black", width=2)
+    y += 22
+
+    # Detalle.
+    regla()
+    cabecera = _font(17, True)
+    draw.text((left + 6, y), "SKU", font=cabecera, fill="black")
+    for etiqueta, borde in (("CANT.", 300), ("VALOR U.", 400), ("DESC.", 478), ("SUB.", right)):
+        draw.text((borde - draw.textlength(etiqueta, font=cabecera), y), etiqueta, font=cabecera, fill="black")
+    y += 30
+    regla()
+    escribir(servicio_nombre, 21, False, left + 8, right - 8, gap=8)
+    fila = _font(21)
+    for texto, borde in (("1", 300), (moneda(monto), 400), ("$0", 478), (moneda(monto), right)):
+        draw.text((borde - draw.textlength(texto, font=fila), y), texto, font=fila, fill="black")
+    y += 36
+    regla()
+
+    # Totales.
+    y += 6
+    total_font = _font(28, True)
+    draw.text((110, y), "TOTAL:", font=total_font, fill="black")
+    draw.text((330, y), moneda(monto), font=total_font, fill="black")
+    y += 44
+    if tributario.get("iva"):
+        escribir(f"El IVA incluido en esta boleta es de : {moneda(tributario['iva'])}", 21, True, gap=8)
+    y += 6
+
+    # Timbre y datos de verificación.
+    timbre = tributario["imagen"]
+    if timbre.width > ancho:
+        raise ValueError("El timbre no cabe en el ancho del ticket")
+    image.paste(timbre, ((ancho - timbre.width) // 2, y))
+    y += timbre.height + 4
+    escribir("Timbre Electrónico S.I.I.", 22, True, align="center", gap=4)
+    numero, resolucion = tributario.get("resolucion_numero"), str(tributario.get("resolucion_fecha") or "")
+    if numero and resolucion:
+        try:
+            resolucion = datetime.strptime(resolucion, "%Y-%m-%d").strftime("%d-%m-%Y")
+        except ValueError:
+            pass
+        escribir(f"Res. {numero} del {resolucion}", 19, False, align="center", gap=14)
+    escribir("Documento electrónico emitido en www.kame.cl", 19, True, align="center", gap=4)
+    escribir("Verifique el documento en sii.cl", 19, True, align="center", gap=4)
+    return image.crop((0, 0, ancho, y + 24)).convert("1")
+
+
 def render_receipt(db, ticket_num, servicio_nombre, monto, forma_pago, folio_kame,
                    estado_kame, rut_cliente, es_pase_libre, creado_en=None, servicio_codigo=None,
                    documento_tributario=None):
+    if documento_tributario and estado_kame == "ok" and folio_kame and not es_pase_libre:
+        return _render_boleta_simple(db, servicio_nombre, monto, folio_kame, creado_en, documento_tributario)
     image = Image.new("RGB", (576, 12000), "white")
     draw = ImageDraw.Draw(image)
     y = 16
