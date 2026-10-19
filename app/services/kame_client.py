@@ -83,6 +83,14 @@ class KameAPI:
             return f'KAME rechazó la boleta (código HTTP {status_code}). Revisa la configuración KAME.'
         return 'KAME no pudo emitir la boleta. Revisa el documento en KAME.'
 
+    def _unidad_negocio(self, servicio_nombre):
+        """Unidad de negocio por tipo de acceso (KAME_UNIDAD_NEGOCIO_BANO / _DUCHA);
+        si no está definida, usa KAME_UNIDAD_NEGOCIO."""
+        from app.services.cuadre import tipo_acceso
+        tipo = tipo_acceso(servicio_nombre)
+        especifica = self._config(f'KAME_UNIDAD_NEGOCIO_{tipo.upper()}', '') if tipo else ''
+        return especifica or self._config('KAME_UNIDAD_NEGOCIO', 'CASA MATRIZ')
+
     def _reload(self):
         """Recarga credenciales; el entorno tiene prioridad sobre SQLite."""
         self.base_url = self._config(
@@ -287,7 +295,7 @@ class KameAPI:
                     'Descuento': 0,
                     'Total': total,
                     'UnidadMedida': self._config('KAME_UNIDAD_MEDIDA', 'UN'),
-                    'UnidadNegocio': self._config('KAME_UNIDAD_NEGOCIO', 'CASA MATRIZ'),
+                    'UnidadNegocio': self._unidad_negocio(servicio.get('nombre', '')),
                     'Articulo': '',
                     'PorcDescuento': 0,
                     'DescripcionDetallada': servicio.get('descripcion', ''),
