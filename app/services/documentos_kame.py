@@ -131,7 +131,9 @@ def imagen_timbre(ted):
     from pdf417gen.error_correction import compute_error_correction_code_words
     from pdf417gen.util import chunks
     from pdf417gen import render_image
-    columnas, nivel = 9, 5
+    # 12 columnas a modulo 2 llenan los 72 mm utiles; el margen de 10 px (1,25 mm) supera
+    # los 2 modulos de zona de silencio. Verificado con un lector independiente.
+    columnas, nivel = 12, 5
     palabras = [924 if len(ted) % 6 == 0 else 901, *compact_bytes(ted)]
     relleno = get_padding(len(palabras), 2 ** (nivel + 1), columnas)
     # Minimo 20 mm de alto para el simbolo, a 8 pixeles/mm, modulo 2 y ratio 3.
@@ -142,7 +144,7 @@ def imagen_timbre(ted):
     datos = [1 + len(palabras) + len(relleno), *palabras, *relleno]
     datos += compute_error_correction_code_words(datos, nivel)
     codigos = list(encode_rows(list(chunks(datos, columnas)), columnas, nivel))
-    return render_image(codigos, scale=2, ratio=3, padding=51).convert("RGB")
+    return render_image(codigos, scale=2, ratio=3, padding=10).convert("RGB")
 
 
 def obtener_timbre(venta, client=None):
