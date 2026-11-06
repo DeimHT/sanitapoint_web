@@ -13,6 +13,8 @@ Las consultas de documentos existentes nunca llaman a `addVenta`. No se presupon
 
 ## Configuracion del servidor
 
+El punto de venta completa `Direccion` y `Ciudad` con los campos Dirección y Ciudad guardados en **Configuración > Datos de la empresa** (`empresa_direccion` y `empresa_ciudad`). No se requiere duplicarlos en `.env`. Si no hay dirección guardada, se envia `Sin dirección` para evitar el rechazo por texto vacio.
+
 En `.env` configura las credenciales existentes y `KAME_RUT`, con el RUT de la empresa emisora. Los documentos nuevos guardan RUT y tipo junto a la venta para conservar su identidad aunque cambie la configuracion. Para documentos anteriores sin ese dato se utiliza el RUT configurado al recuperarlos.
 
 Cuando el XML individual no contiene la caratula con la resolucion, configura los datos reales del emisor:

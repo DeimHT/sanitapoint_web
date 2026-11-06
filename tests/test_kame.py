@@ -51,6 +51,34 @@ class KameTests(unittest.TestCase):
         return emitir_boleta(self.db, 'Ducha', 2000, 'debito', ticket_num='T000001')
 
     @patch('app.services.kame_client.requests.post')
+    def test_address_uses_saved_company_settings(self, post):
+        self.configure(modo='real', token='token', user='cashier@example.com')
+        self.configure(direccion_receptor='Valor antiguo que no debe usarse')
+        post.return_value = response({'Estado': 'OK', 'Folio': 456})
+        guardar_config(ConfigIn(valores={'empresa_ciudad': 'PUERTO MONTT'}), self.db)
+        for configured, expected in ((None, 'Sin dirección'), ('', 'Sin dirección'),
+                                     ('   ', 'Sin dirección'), (' DIEGO PORTALES 1001 ', 'DIEGO PORTALES 1001')):
+            with self.subTest(configured=configured):
+                if configured is not None:
+                    guardar_config(ConfigIn(valores={'empresa_direccion': configured}), self.db)
+                self.assertEqual(self.emit(), ('456', 'ok'))
+                self.assertEqual(post.call_args.kwargs['json']['Direccion'], expected)
+                self.assertEqual(post.call_args.kwargs['json']['Ciudad'], 'PUERTO MONTT')
+        guardar_config(ConfigIn(valores={'empresa_direccion': 'Otra dirección'}), self.db)
+        self.emit()
+        self.assertEqual(post.call_args.kwargs['json']['Direccion'], 'Otra dirección')
+
+    @patch('app.services.kame_client.requests.post')
+    def test_address_rejection_explains_configuration(self, post):
+        self.configure(modo='real', token='token', user='cashier@example.com')
+        post.return_value = response({'Estado': 'Error', 'Error': [
+            {'MemberNames': ['Direccion'], 'ErrorMessage': 'Direccion no puede ser vacío'}]})
+        message, status = self.emit()
+        self.assertEqual(status, 'error')
+        self.assertIn('Configuración > Datos de la empresa', message)
+        self.assertEqual(post.call_count, 1)
+
+    @patch('app.services.kame_client.requests.post')
     def test_mock_is_explicit_and_unique(self, post):
         self.configure(modo='mock')
         first, status = self.emit()

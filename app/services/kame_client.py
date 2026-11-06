@@ -10,6 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
 from dotenv import dotenv_values
+from app.services.config_store import get_config
 
 
 class KameAPI:
@@ -70,6 +71,9 @@ class KameAPI:
             return 'No fue posible autenticar la aplicación con KAME.'
         if status_code == 403:
             return 'KAME rechazó el acceso. Revisa los permisos o espera unos minutos.'
+        if 'direccion' in detalle_lower or 'dirección' in detalle_lower:
+            return ('KAME rechazó la dirección. '
+                    'Revisa Dirección en Configuración > Datos de la empresa.')
         if 'exento' in detalle_lower:
             return ('KAME rechazó la configuración tributaria del servicio. '
                     'Revisa KAME_DETALLE_EXENTO o contacta a soporte KAME.')
@@ -262,8 +266,9 @@ class KameAPI:
             'Folio': '',
             'RznSocial': razon_receptor,
             'Giro': 'Particular',
-            'Direccion': '',
-            'Ciudad': '',
+            # El punto de venta utiliza los datos guardados en Configuración.
+            'Direccion': ((get_config(self.db, 'empresa_direccion') if self.db is not None else '') or '').strip() or 'Sin dirección',
+            'Ciudad': ((get_config(self.db, 'empresa_ciudad') if self.db is not None else '') or '').strip(),
             'Comuna': '',
             'Telefono': '',
             'Email': '',
