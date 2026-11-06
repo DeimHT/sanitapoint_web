@@ -75,6 +75,6 @@ echo.
 
 REM --- 4. Abrir el navegador local y arrancar el servidor ---------------
 start "" http://localhost:8000
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir app
+python scripts\servidor_consola.py
 
 pause

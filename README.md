@@ -14,7 +14,11 @@ Se usa desde el navegador. Un computador principal mantiene el sistema funcionan
 
 Puedes guardar la dirección en los favoritos del navegador para encontrarla más rápido.
 
+El inicio con `iniciar_servidor.bat` desactiva la selección rápida de texto de la consola y guarda la actividad en `logs/servidor-consola-AAAA-MM-DD.log`, con la fecha en que se abrió el iniciador. Así, seleccionar texto no bloquea las escrituras del servidor. Puedes minimizar la ventana; Ctrl+C accidental se ignora. Si el proceso web termina, el iniciador intenta levantarlo nuevamente después de 3 segundos. Para apagarlo, cierra completamente la ventana del BAT. La suspensión, un apagado del computador o fallas de Windows siguen interrumpiendo el servicio. El reinicio automático del proceso no reenvía ventas a KAME; comprueba las operaciones que hayan quedado sin confirmar.
+
 ### Aplicar cambios mientras funciona
+
+La consola y el archivo de actividad muestran fecha, hora y zona horaria del equipo servidor en cada línea (solicitudes, mensajes KAME y errores). La pantalla se actualiza de forma independiente: si queda pausada, el servidor continúa y el archivo conserva el registro completo.
 
 Los archivos de inicio activan la recarga automática: al guardar código Python dentro de `app/`, el servidor espera las solicitudes en curso y recarga el proceso. Puede haber una pausa breve; no hace falta cerrar la ventana. Para activar esta función en un servidor que ya estaba abierto, reinícialo una sola vez con el archivo de inicio actualizado.
 
