@@ -39,6 +39,13 @@ async function cargar() {
       `<td>${c.diferencia_bano ?? "—"}</td><td>${c.diferencia_ducha ?? "—"}</td>` +
       `<td><button class="btn btn-azul" aria-expanded="false">Ver cuadre</button></td>`;
     tr.querySelector(".operador").textContent = c.operador || "";
+    const imprimir = document.createElement("a");
+    imprimir.className = "btn btn-azul";
+    imprimir.textContent = "Imprimir cierre";
+    imprimir.href = `/api/caja/${c.id}/imprimir`;
+    imprimir.target = "_blank";
+    imprimir.rel = "noopener";
+    tr.lastElementChild.appendChild(imprimir);
     tbody.appendChild(tr);
     const detalle = document.createElement("tr");
     detalle.hidden = true;

@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import HTMLResponse
 from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -199,6 +200,21 @@ def listar_cierres(db: Session = Depends(get_db)):
         .all()
     )
     return [resumen_caja(db, c) for c in cajas]
+
+
+@router.get("/{caja_id}/imprimir", response_class=HTMLResponse)
+def imprimir_cierre(caja_id: int, db: Session = Depends(get_db),
+                    cuenta: Cuenta = Depends(get_current_cuenta)):
+    caja = db.get(Caja, caja_id)
+    permisos = caps_de(cuenta.rol)
+    if not caja or not (VER_CIERRES in permisos or
+                       (caja.cuenta_id == cuenta.id and CAJA_CIERRE in permisos)):
+        raise HTTPException(404, "Cierre no encontrado")
+    if caja.estado != "cerrada":
+        raise HTTPException(409, "Debes cerrar la caja antes de imprimir el cierre")
+    from app.services.cierre_printer import html_cierre
+    return HTMLResponse(html_cierre(db, resumen_caja(db, caja)),
+                        headers={"Cache-Control": "no-store"})
 
 
 @router.get("/resumen/hoy")

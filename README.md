@@ -92,6 +92,8 @@ También compara los accesos registrados con el avance de los torniquetes. Si ha
 
 Al terminar, pulsa **Salir** para cerrar tu sesión. Salir de la cuenta no reemplaza el cierre de caja.
 
+Después de cerrar, pulsa **Imprimir cierre** en el resumen del último cierre de **Caja**. Contabilidad y Administración también pueden reimprimir desde **Cierres**, junto a **Ver cuadre**. El comprobante incluye totales del turno, efectivo esperado y contado, retiros, diferencias y lecturas de torniquetes. Usa la misma impresora térmica de las boletas: selecciona papel de **80 mm**, escala **100 %**, sin encabezados ni pies del navegador. Imprimir o cancelar el diálogo no modifica el cierre guardado.
+
 ## Qué puede hacer cada persona
 
 El menú muestra las opciones disponibles para tu cuenta.
