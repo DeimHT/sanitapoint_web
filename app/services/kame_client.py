@@ -360,7 +360,7 @@ class KameAPI:
             return {'ok': False, 'folio': None, 'id': None,
                     'pdf_url': None, 'mensaje': 'KAME tardó demasiado en responder. Verifica en KAME si se emitió antes de repetir la venta.'}
         except Exception as e:
-            print('[KAME] Respuesta inválida o error de comunicación.', flush=True)
+            print(f'[KAME] Respuesta inválida o error de comunicación: {type(e).__name__}: {str(e)[:300]}', flush=True)
             return {'ok': False, 'folio': None, 'id': None,
                     'pdf_url': None,
                     'mensaje': 'Ocurrió un error al comunicarse con KAME. Revisa la configuración KAME.'}
