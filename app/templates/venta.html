@@ -190,7 +190,7 @@ async function presentarVenta(venta) {
 }
 
 async function vender(servicio, boton) {
-  if (!iniciarVenta(`Procesando ${servicio.nombre} · ${fmtMonto(servicio.precio)}. Preparando boleta con timbre; espera el resultado…`, boton)) return;
+  if (!iniciarVenta(`Procesando ${servicio.nombre} · ${fmtMonto(servicio.precio)}. Esperando confirmación de Kame…`, boton)) return;
   try {
     const venta = await api.post("/api/ventas", {
       servicio_id: servicio.id,
@@ -199,7 +199,8 @@ async function vender(servicio, boton) {
     await presentarVenta(venta);
     refrescarStatusbar();
   } catch (e) {
-    mostrarResultado(e.message, "error");
+    if (e.resultadoIncierto) boletaPorCompletar = { estado_kame: "pendiente" };
+    mostrarResultado(e.message + (e.resultadoIncierto ? " Revisa Historial y la consola del servidor antes de continuar; no vuelvas a cobrar esta atención." : ""), "error");
   } finally {
     terminarVenta();
   }

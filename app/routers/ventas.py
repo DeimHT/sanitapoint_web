@@ -1,4 +1,5 @@
 from datetime import date, datetime
+import time
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -111,9 +112,13 @@ def registrar_venta(body: VentaIn, db: Session = Depends(get_db),
     # durante la llamada externa a KAME: otros usuarios pueden seguir atendiendo.
     folio_kame, estado_kame = (None, "omitido")
     if not body.es_pase_libre:
+        inicio_kame = time.monotonic()
+        print(f'[VENTA] Enviando a KAME ticket={venta.ticket}', flush=True)
         folio_kame, estado_kame = emitir_boleta(
             db, venta.servicio_nombre, monto, body.forma_pago, body.rut_cliente, ticket_num=venta.ticket
         )
+        print(f'[VENTA] Respuesta KAME ticket={venta.ticket} estado={estado_kame} '
+              f'duracion={time.monotonic() - inicio_kame:.1f}s', flush=True)
         venta.folio_kame = folio_kame if estado_kame != "error" else None
         venta.estado_kame = estado_kame
         db.commit()

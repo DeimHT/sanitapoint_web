@@ -5,15 +5,27 @@ const api = {
     if (!r.ok) throw await api._err(r);
     return r.json();
   },
-  async post(path, body) {
-    const r = await fetch(path, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body || {}),
-    });
-    api._checkAuth(r);
-    if (!r.ok) throw await api._err(r);
-    return r.json();
+  async post(path, body, { timeoutMs = 60000 } = {}) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const r = await fetch(path, {
+        method: "POST",
+        signal: controller.signal,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body || {}),
+      });
+      api._checkAuth(r);
+      if (!r.ok) throw await api._err(r);
+      return await r.json();
+    } catch (e) {
+      if (controller.signal.aborted) {
+        const error = new Error("El servidor no respondió a tiempo. La operación puede haberse registrado; comprueba su estado antes de repetirla.");
+        error.resultadoIncierto = true;
+        throw error;
+      }
+      throw e;
+    } finally { clearTimeout(timer); }
   },
   async put(path, body) {
     const r = await fetch(path, {

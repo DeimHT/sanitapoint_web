@@ -203,6 +203,7 @@ class KameAPI:
                 self.token = self._obtener_token(force=True, timeout=tiempo_disponible())
                 respuesta = requests.get(url, headers=self._headers(), timeout=tiempo_disponible(), allow_redirects=False)
             if respuesta.status_code != 200:
+                print(f'[KAME] Consulta {formato} folio={folio}: HTTP {respuesta.status_code}', flush=True)
                 mensaje = ("KAME aún no entrega el documento emitido. Reintenta Imprimir sin registrar otra venta."
                            if respuesta.status_code in (404, 409, 202) else
                            "No se pudo recuperar el documento de KAME. Reintenta Imprimir sin registrar otra venta.")
@@ -222,6 +223,7 @@ class KameAPI:
                 raise DocumentoKameTemporal("KAME todavía no tiene disponible el documento. Reintenta Imprimir.")
             return datos
         except requests.RequestException as error_red:
+            print(f'[KAME] Consulta {formato} folio={folio}: {type(error_red).__name__}', flush=True)
             clase = DocumentoKameError if (error_red.response is not None and
                     error_red.response.status_code in (400, 401, 403, 404)) else DocumentoKameTemporal
             raise clase("No se pudo conectar con KAME para recuperar el documento. La venta no debe repetirse.") from None
@@ -339,6 +341,8 @@ class KameAPI:
                 error = data.get('Error')
                 if not ok:
                     print(f'[KAME] addVenta sin folio (Estado={data.get("Estado")}): {str(error)[:500]}', flush=True)
+                else:
+                    print(f'[KAME] Emisión confirmada ticket={venta.get("ticket_num", "")} folio={data.get("Folio")}', flush=True)
                 return {
                     'ok':      ok,
                     'folio':   str(data.get('Folio') or ''),
@@ -420,11 +424,16 @@ def emitir_boleta(db, servicio_nombre, monto_total, forma_pago, rut_cliente=None
             venta.estado_kame = 'ok'
             db.commit()
             # Una falla al obtener el timbre nunca convierte una emision en fallida.
+            anterior = getattr(client, '_documento_deadline', None)
+            client._documento_deadline = time.monotonic() + 3
             try:
-                preparar_timbre(db, venta, client=client, exigir=False, esperar=True)
+                # Una consulta breve. Los reintentos largos quedan para Imprimir.
+                preparar_timbre(db, venta, client=client, exigir=False, esperar=False)
             except Exception:
                 # La emision confirmada no se repite por un fallo local de impresion.
                 import logging
                 logging.getLogger(__name__).exception("No se pudo preparar la impresion de la boleta emitida")
                 db.rollback()
+            finally:
+                client._documento_deadline = anterior
     return (result['folio'], 'ok') if result['ok'] else (result['mensaje'], 'error')

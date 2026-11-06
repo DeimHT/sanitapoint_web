@@ -28,7 +28,9 @@ No copies la resolucion de los ejemplos. La impresion termica solicita estos dat
 
 ## Venta, impresion y recuperacion
 
-Despues de que KAME confirma la emision, se intenta recuperar el XML con el mismo cliente y token. La venta permanece emitida aunque falle esa consulta. La misma peticion de venta espera el timbre: hasta seis consultas de lectura, con pausas de 1, 2, 3, 5 y 5 segundos y un presupuesto de espera de 20 segundos para recuperarlo. Solo se reintentan errores transitorios o XML aun no disponible; nunca se repite la emision para conseguir su timbre.
+Despues de que KAME confirma la emision, se intenta recuperar el XML con el mismo cliente y token. La venta permanece emitida aunque falle esa consulta. Durante el cobro se realiza una sola consulta con presupuesto de red de 3 segundos, sin pausas ni polling. Si el timbre sigue pendiente, se permite atender otra venta y recuperarlo desde Imprimir. La accion Imprimir admite hasta seis consultas de lectura, con pausas de 1, 2, 3, 5 y 5 segundos y un presupuesto de espera de 20 segundos. Solo se reintentan consultas de documentos existentes; nunca se repite la emision para conseguir su timbre.
+
+Las solicitudes POST del navegador tienen un limite de espera de 60 segundos. Si vence durante el cobro, se muestra un aviso de resultado incierto y no se permite repetirlo desde esa pantalla: hay que comprobar Historial y el estado de KAME antes de continuar. Cancelar la espera del navegador no cancela la operacion en el servidor. La consola registra el inicio y la duracion del envio, el folio confirmado y los errores HTTP o de conexion al consultar documentos, sin imprimir credenciales.
 
 Para el ticket termico se conserva el texto original del TED, incluidos sus caracteres ISO-8859-1 y saltos de linea. Se cotejan RUT emisor, tipo, folio, fecha, receptor y monto con el documento y la venta. Se rechazan XML con DTD, entidades o datos que no coincidan. Esta comprobacion de correspondencia no es una verificacion criptografica independiente de la firma ni una consulta de aceptacion ante el SII.
 
