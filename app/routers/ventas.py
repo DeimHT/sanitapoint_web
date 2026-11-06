@@ -23,8 +23,7 @@ router = APIRouter(prefix="/api/ventas", tags=["ventas"],
 
 def boleta_incompleta(db, caja_id):
     return db.query(Venta).filter(Venta.caja_id == caja_id, Venta.es_pase_libre == False,
-        (Venta.estado_kame == "pendiente") | ((Venta.estado_kame == "ok") &
-        (Venta.kame_timbre_disponible == False))).order_by(Venta.id).first()
+        Venta.estado_kame == "pendiente").order_by(Venta.id).first()
 
 
 @router.get("/boleta-en-curso", response_model=VentaOut | None,

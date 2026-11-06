@@ -144,7 +144,7 @@ function mostrarVentaConfirmada(venta, kame, impresion) {
     <section class="venta-confirmacion ${incompleta ? "venta-incompleta" : ""}" aria-label="Resultado de la venta">
       <div class="venta-confirmacion-cabecera">
         <span class="venta-confirmacion-icono" aria-hidden="true">${incompleta ? "!" : "✓"}</span>
-        <div class="venta-confirmacion-titulo"><p>${incompleta ? "Atencion sin completar: falta la boleta" : "Venta registrada"}</p><h3>${e(venta.servicio_nombre)}</h3></div>
+        <div class="venta-confirmacion-titulo"><p>${venta.estado_kame === "pendiente" ? "Emisión por confirmar: no vuelvas a cobrar" : incompleta ? "Boleta emitida; timbre pendiente" : "Venta registrada"}</p><h3>${e(venta.servicio_nombre)}</h3></div>
         <strong class="venta-confirmacion-monto">${e(fmtMonto(venta.monto))}</strong>
       </div>
       <div class="venta-confirmacion-detalle">
@@ -168,7 +168,7 @@ async function presentarVenta(venta) {
     const impresion = venta.estado_kame === "ok"
       ? (venta.kame_timbre_disponible ? "Timbre listo para imprimir." : venta.kame_error_documento || "Timbre pendiente. Pulsa Imprimir para reintentar sin registrar otra venta.")
       : "Comprobante sin timbre de una boleta real.";
-    boletaPorCompletar = venta.estado_kame === "pendiente" || (venta.estado_kame === "ok" && !venta.kame_timbre_disponible) ? venta : null;
+    boletaPorCompletar = venta.estado_kame === "pendiente" ? venta : null;
     mostrarVentaConfirmada(venta, kame, impresion);
     document.getElementById("btn_imprimir_boleta").onclick = async function () {
       this.disabled = true;
@@ -178,10 +178,7 @@ async function presentarVenta(venta) {
         const res = await equipoLocal.imprimir(venta.ticket);
         if (venta.estado_kame === "ok") {
           venta.kame_timbre_disponible = true;
-          boletaPorCompletar = null;
-          terminarVenta();
-          mostrarVentaConfirmada(venta, kame, "Timbre listo. " + res.mensaje);
-          document.getElementById("btn_imprimir_boleta").onclick = this.onclick;
+          estado.textContent = "Timbre listo. " + res.mensaje;
         } else { estado.textContent = " " + res.mensaje; }
       } catch (e) { estado.textContent = " " + e.message; }
       finally { this.disabled = false; }

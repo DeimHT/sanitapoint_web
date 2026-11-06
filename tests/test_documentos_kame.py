@@ -232,7 +232,22 @@ class DocumentosKameTests(unittest.TestCase):
         self.assertEqual(self.get.call_count, 3)
         self.assertEqual(self.post.call_count, 1)
 
-    def test_bloquea_nuevo_cobro_hasta_completar_boleta(self):
+    def test_timbre_pendiente_no_bloquea_nuevo_cobro(self):
+        servicio = Servicio(nombre="Ducha", precio=2000, activo=True)
+        self.db.add(servicio)
+        self.db.commit()
+        with patch('app.routers.ventas.emitir_boleta', return_value=('457', 'ok')) as emitir:
+            resultado = registrar_venta(VentaIn(servicio_id=servicio.id, forma_pago="efectivo"), self.db, self.cuenta)
+        self.assertEqual(resultado.folio_kame, '457')
+        self.assertEqual(self.db.query(Venta).count(), 2)
+        emitir.assert_called_once()
+        self.assertEqual(self.venta.folio_kame, '456')
+        self.assertFalse(self.venta.kame_timbre_disponible)
+
+    def test_emision_pendiente_bloquea_nuevo_cobro(self):
+        self.venta.estado_kame = 'pendiente'
+        self.venta.folio_kame = None
+        self.db.commit()
         servicio = Servicio(nombre="Ducha", precio=2000, activo=True)
         self.db.add(servicio)
         self.db.commit()
@@ -251,6 +266,7 @@ class DocumentosKameTests(unittest.TestCase):
 
     def test_pendiente_de_otra_caja_no_bloquea(self):
         from app.routers.ventas import boleta_incompleta, consultar_boleta_en_curso
+        self.venta.estado_kame = 'pendiente'
         otra_caja = Caja(operador="Otro", cuenta_id=self.otro.id, servicio="Ba\u00f1o 2", estado="abierta")
         self.db.add(otra_caja)
         self.db.commit()
