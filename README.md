@@ -14,6 +14,12 @@ Se usa desde el navegador. Un computador principal mantiene el sistema funcionan
 
 Puedes guardar la dirección en los favoritos del navegador para encontrarla más rápido.
 
+### Aplicar cambios mientras funciona
+
+Los archivos de inicio activan la recarga automática: al guardar código Python dentro de `app/`, el servidor espera las solicitudes en curso y recarga el proceso. Puede haber una pausa breve; no hace falta cerrar la ventana. Para activar esta función en un servidor que ya estaba abierto, reinícialo una sola vez con el archivo de inicio actualizado.
+
+Los cambios guardados en **Configuración** y las variables `KAME_*` de `.env` se aplican en la siguiente operación, sin recargar el proceso. Las variables del sistema tienen prioridad sobre `.env`. Los cambios HTML, CSS y JavaScript se ven al refrescar el navegador. Cambiar la base de datos, el puerto, instalar dependencias o actualizar los archivos de inicio sigue requiriendo reiniciar. En el arranque por tareas (`scripts/servidor_local.py`), usa `--no-reload` si necesitas desactivar la recarga automática.
+
 ### Si es la primera vez
 
 La persona encargada de instalar el sistema debe tener **Python 3.11 o superior** en el computador principal, con la opción **“Add Python to PATH”** marcada durante su instalación. Al abrir SanitaPoint por primera vez, se descargan los componentes necesarios; hace falta internet y puede tardar unos minutos.

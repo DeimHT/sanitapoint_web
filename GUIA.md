@@ -235,7 +235,7 @@ Referencia: [reglas de Firewall de Windows y filtros de dirección](https://lear
 
 Se usa el **Programador de tareas** con desencadenador **Al iniciar el sistema**, sin depender de una sesión de escritorio. No uses la carpeta `shell:startup` ni el `.bat` interactivo para este despliegue: requieren sesión, abren navegador o dejan ventanas de pausa.
 
-El archivo incluido [`scripts/servidor_local.py`](scripts/servidor_local.py) inicia Uvicorn sin navegador, con un solo proceso y sin `--reload`. Escribe la salida en `C:\SanitaPoint\logs\servidor-AAAA-MM-DD.log` (el nombre corresponde al día de inicio del proceso; no rota hasta reiniciarlo). Devuelve el código de salida a Windows para que pueda reintentar ante un fallo.
+El archivo incluido [`scripts/servidor_local.py`](scripts/servidor_local.py) inicia Uvicorn sin navegador y con recarga automática del código Python en `app/`. Al guardar cambios, espera las solicitudes en curso y recarga el proceso; puede haber una pausa breve. Usa `--no-reload` para desactivar esta función y ejecutar un solo proceso sin supervisor de recarga. Escribe la salida en `C:\SanitaPoint\logs\servidor-AAAA-MM-DD.log` (el nombre corresponde al día de inicio del lanzador; no rota hasta reiniciarlo). Devuelve el código de salida a Windows para que pueda reintentar ante un fallo.
 
 La receta utiliza la cuenta local de servicio `SYSTEM`, que no requiere almacenar una contraseña. **Protege `C:\SanitaPoint` con permisos NTFS**: modificación solo para Administradores y SYSTEM; las cuentas comunes no necesitan acceso a esa carpeta. La tarea ejecuta ese código con privilegios del sistema. En una instalación administrada puede usarse una cuenta de servicio dedicada con los permisos de lectura/escritura necesarios.
 

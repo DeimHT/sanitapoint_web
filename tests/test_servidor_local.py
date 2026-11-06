@@ -71,6 +71,16 @@ class RespaldoServidorTests(unittest.TestCase):
                 self.assertEqual(servidor_local.main(), 1)
                 args = iniciar.call_args.args[0]
                 self.assertEqual(args, [sys.executable, "-m", "uvicorn", "app.main:app", "--host",
-                                        "192.168.10.10", "--port", "8000", "--workers", "1"])
+                                        "192.168.10.10", "--port", "8000", "--reload", "--reload-dir", str(raiz / "app")])
                 self.assertEqual(iniciar.call_args.kwargs["cwd"], raiz)
                 self.assertEqual(len(list((raiz / "logs").glob("servidor-*.log"))), 1)
+
+    def test_recarga_se_puede_desactivar(self):
+        with tempfile.TemporaryDirectory() as directorio:
+            with patch.object(servidor_local, "ROOT", Path(directorio)), \
+                 patch.object(sys, "argv", ["servidor_local.py", "--host", "127.0.0.1", "--no-reload"]), \
+                 patch.object(servidor_local.subprocess, "call", return_value=0) as iniciar:
+                self.assertEqual(servidor_local.main(), 0)
+                comando = iniciar.call_args.args[0]
+                self.assertNotIn("--reload", comando)
+                self.assertEqual(comando[-2:], ["--workers", "1"])

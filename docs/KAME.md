@@ -24,7 +24,7 @@ KAME_RESOLUCION_NUMERO=NUMERO_REAL_DEL_EMISOR
 KAME_RESOLUCION_FECHA=AAAA-MM-DD
 ```
 
-No copies la resolucion de los ejemplos. La impresion termica solicita estos datos si faltan; el PDF oficial se puede recuperar independientemente. Reinicia despues de cambiar `.env` e instala las dependencias actualizadas de `requirements.txt`.
+No copies la resolucion de los ejemplos. La impresion termica solicita estos datos si faltan; el PDF oficial se puede recuperar independientemente. Los cambios `KAME_*` de `.env` se leen en la siguiente operacion, sin reiniciar; las variables del sistema tienen prioridad. Instala las dependencias actualizadas de `requirements.txt` y reinicia si estas cambian.
 
 ## Venta, impresion y recuperacion
 
