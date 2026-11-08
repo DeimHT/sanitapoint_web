@@ -24,6 +24,36 @@ from app.security import hash_password
 
 
 class TurnosTests(unittest.TestCase):
+    def test_pase_con_monto_antiguo_solo_suma_al_torniquete(self):
+        from app.routers.caja import resumen_hoy
+        from app.services.reportes import _totales
+
+        self.vender(self.a, self.bano)
+        self.vender(self.a, self.bano, "tarjetas")
+        pase = self.vender(self.a, self.bano, pase=True)
+        self.db.query(Venta).filter(Venta.ticket == pase.ticket).update({"monto": 500})
+        self.db.commit()
+
+        diario = resumen_hoy(self.db, self.a)
+        self.assertEqual(diario["total_transacciones"], 3)
+        self.assertEqual(diario["pases_gratis"], 1)
+        self.assertEqual(diario["total_monto"], 1000)
+        self.assertEqual(diario["efectivo"], 500)
+        self.assertEqual(diario["tarjetas"], 500)
+        reporte = _totales(self.db.query(Venta).all())
+        self.assertEqual(reporte["monto_total"], 1000)
+        self.assertEqual(reporte["efectivo"], 500)
+        self.assertEqual(reporte["pases_libres"], 1)
+
+        cierre = self.cerrar(self.a, 10500, 103, 200)
+        self.assertEqual(cierre.contador_bano, 3)
+        self.assertEqual(cierre.pases_bano, 1)
+        self.assertEqual(cierre.ventas_bano, 2)
+        self.assertEqual(cierre.total_ventas, 1000)
+        self.assertEqual(cierre.saldo_esperado, 10500)
+        self.assertEqual(cierre.diferencia_dinero, 0)
+        self.assertEqual(cierre.diferencia_bano, 0)
+
     def test_free_pass_updates_counts_without_boleta_pdf_or_print(self):
         from app.routers.ventas import descargar_ticket_pdf, imprimir_boleta
         with patch("app.routers.ventas.ticket_printer.emitir_ticket") as ticket, \

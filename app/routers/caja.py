@@ -226,14 +226,17 @@ def resumen_hoy(db: Session = Depends(get_db), cuenta: Cuenta = Depends(get_curr
         .filter(Venta.creado_en >= datetime.combine(hoy, datetime.min.time()))
         .all()
     )
+    # Los pases son accesos, nunca ingresos, incluso en registros antiguos
+    # que pudieran conservar el precio del servicio.
+    pagadas = [v for v in ventas if not v.es_pase_libre]
     resumen = {
         "total_transacciones": len(ventas),
-        "total_monto": sum(v.monto for v in ventas),
-        "efectivo": sum(v.monto for v in ventas if v.forma_pago == "efectivo"),
-        "tarjetas": sum(v.monto for v in ventas if v.forma_pago in ("tarjetas", "debito", "credito")),
-        "debito": sum(v.monto for v in ventas if v.forma_pago == "debito"),
-        "credito": sum(v.monto for v in ventas if v.forma_pago == "credito"),
-        "transferencia": sum(v.monto for v in ventas if v.forma_pago == "transferencia"),
+        "total_monto": sum(v.monto for v in pagadas),
+        "efectivo": sum(v.monto for v in pagadas if v.forma_pago == "efectivo"),
+        "tarjetas": sum(v.monto for v in pagadas if v.forma_pago in ("tarjetas", "debito", "credito")),
+        "debito": sum(v.monto for v in pagadas if v.forma_pago == "debito"),
+        "credito": sum(v.monto for v in pagadas if v.forma_pago == "credito"),
+        "transferencia": sum(v.monto for v in pagadas if v.forma_pago == "transferencia"),
         "pases_gratis": sum(1 for v in ventas if v.es_pase_libre),
     }
     return resumen

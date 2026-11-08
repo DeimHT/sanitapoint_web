@@ -48,13 +48,14 @@ def _totales(ventas: list[Venta]) -> dict:
                "efectivo": 0, "tarjetas": 0, "debito": 0, "credito": 0, "transferencia": 0,
                "pases_libres": 0}
     for v in ventas:
+        if v.es_pase_libre:
+            totales["pases_libres"] += 1
+            continue
         totales["monto_total"] += v.monto
         if v.forma_pago in totales:
             totales[v.forma_pago] += v.monto
         if v.forma_pago in ("debito", "credito"):
             totales["tarjetas"] += v.monto
-        if v.es_pase_libre:
-            totales["pases_libres"] += 1
     return totales
 
 
