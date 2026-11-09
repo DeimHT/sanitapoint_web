@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Venta – SanitaPoint{% endblock %}
 {% block extra_head %}<script src="/static/js/cedula.js?v=1"></script>{% endblock %}
+{% block main_class %}ventas-compactas{% endblock %}
 {% block content %}
 <div class="card">
   <h2 id="titulo_pagos">Forma de pago</h2>
@@ -153,7 +154,6 @@ function mostrarVentaConfirmada(venta, kame, impresion) {
         <div><span class="venta-confirmacion-etiqueta">Impresión</span><span>${e(impresion)}</span></div>
       </div>
       <div class="venta-confirmacion-acciones">
-        <button type="button" class="btn btn-azul" id="btn_imprimir_boleta">Imprimir boleta</button>
         <a class="venta-confirmacion-pdf" href="/api/ventas/${encodeURIComponent(venta.ticket)}/pdf" target="_blank" rel="noopener">Ver PDF <span aria-hidden="true">↗</span></a>
       </div>
       <div id="estado_impresion" class="venta-confirmacion-estado" role="status"></div>
@@ -166,24 +166,11 @@ async function presentarVenta(venta) {
       : venta.estado_kame === "mock" ? `Boleta (modo prueba): ${venta.folio_kame}`
       : venta.estado_kame === "error" ? "Error KAME: revisa el aviso" : "Sin boleta KAME";
     const impresion = venta.estado_kame === "ok"
-      ? (venta.kame_timbre_disponible ? "Timbre listo para imprimir." : venta.kame_error_documento || "Timbre pendiente. Pulsa Imprimir para reintentar sin registrar otra venta.")
+      ? (venta.kame_timbre_disponible ? "Timbre listo para impresión automática." : venta.kame_error_documento || "Timbre pendiente. Solicita revisión al supervisor sin registrar otra venta.")
       : "Comprobante sin timbre de una boleta real.";
     boletaPorCompletar = venta.estado_kame === "pendiente" ? venta : null;
     mostrarVentaConfirmada(venta, kame, impresion);
-    document.getElementById("btn_imprimir_boleta").onclick = async function () {
-      this.disabled = true;
-      const estado = document.getElementById("estado_impresion");
-      estado.textContent = " Enviando...";
-      try {
-        const res = await equipoLocal.imprimir(venta.ticket);
-        if (venta.estado_kame === "ok") {
-          venta.kame_timbre_disponible = true;
-          estado.textContent = "Timbre listo. " + res.mensaje;
-        } else { estado.textContent = " " + res.mensaje; }
-      } catch (e) { estado.textContent = " " + e.message; }
-      finally { this.disabled = false; }
-    };
-    if (equipoLocal.leer().impresora_automatica === "1" && (venta.estado_kame === "mock" || (venta.estado_kame === "ok" && venta.kame_timbre_disponible))) {
+    if (venta.estado_kame === "mock" || (venta.estado_kame === "ok" && venta.kame_timbre_disponible)) {
       try { const res = await equipoLocal.imprimir(venta.ticket); document.getElementById("estado_impresion").textContent = res.mensaje; }
       catch (e) { document.getElementById("estado_impresion").textContent = e.message; }
     }

@@ -380,5 +380,28 @@ th { background: #ECEFF1; font-weight: 700; }
   .equipo-prueba-fila .btn { width: 100%; }
 }
 
+/* Espaciado del puesto de ventas: mantiene las acciones visibles en portatiles. */
+main.ventas-compactas { padding: 10px 12px 16px; }
+.ventas-compactas > .card { padding: 12px 14px; margin-bottom: 10px; }
+.ventas-compactas > .card h2 { margin: 0 0 8px; font-size: 19px; }
+.ventas-compactas #pagos { gap: 12px; padding: 4px; }
+.ventas-compactas .pago-seleccionado { margin-top: 8px; font-size: 13px; }
+.ventas-compactas > .card .grid-servicios { gap: 8px; }
+.ventas-compactas > .card .grid-servicios button { min-height: 70px; padding: 8px 12px; }
+.ventas-compactas > .card .gap-top { margin-top: 8px; }
+.ventas-compactas .venta-confirmacion { margin-top: 0; padding: 12px 14px; border-radius: 10px; }
+.ventas-compactas .venta-confirmacion-cabecera { gap: 10px; }
+.ventas-compactas .venta-confirmacion-icono { flex-basis: 36px; height: 36px; font-size: 22px; }
+.ventas-compactas .venta-confirmacion-titulo h3 { font-size: 18px; }
+.ventas-compactas .venta-confirmacion-monto { font-size: 24px; }
+.ventas-compactas .venta-confirmacion-detalle { margin-top: 10px; padding: 10px 0; gap: 12px; }
+.ventas-compactas .venta-confirmacion-detalle > div { gap: 3px; }
+.ventas-compactas .venta-confirmacion-acciones { margin-top: 4px; gap: 10px; }
+.ventas-compactas .venta-confirmacion-pdf { padding: 6px 4px; }
+.ventas-compactas .venta-confirmacion-estado:not(:empty) { margin-top: 6px; }
+@media (max-width: 600px) {
+  .ventas-compactas .venta-confirmacion-monto { margin-left: 46px; }
+}
+
 .venta-incompleta .venta-confirmacion-cabecera { background: #fff3cd; color: #664d03; }
 .venta-incompleta .venta-confirmacion-icono { background: #ffecb5; color: #664d03; }

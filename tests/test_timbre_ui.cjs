@@ -15,7 +15,7 @@ let siguiente, impresiones = 0, ventas = 0;
 const contexto = vm.createContext({
   document: { getElementById: elemento, querySelectorAll: () => [], createElement: () => elemento('aviso') },
   api: { async post() { ventas++; return siguiente; } },
-  equipoLocal: { leer: () => ({ impresora_automatica: '1' }), async imprimir() { impresiones++; return { mensaje: 'Dialogo abierto' }; } },
+  equipoLocal: { leer: () => ({ impresora_automatica: '0' }), async imprimir() { impresiones++; return { mensaje: 'Dialogo abierto' }; } },
   fmtMonto: n => '$' + n, refrescarStatusbar() {}, alert() {}, leerCedula() {},
 });
 const script = fs.readFileSync('app/templates/venta.html', 'utf8').match(/<script>([\s\S]*?)<\/script>/)[1].replace(/cargarServicios\(\);\s*$/, '');
@@ -25,14 +25,14 @@ vm.runInContext(script, contexto);
   await contexto.vender({ id: 1, nombre: 'Ducha', precio: 2000 }, null);
   assert.equal(impresiones, 0, 'Una boleta real sin timbre no se imprime automaticamente');
   assert.match(elemento('resultado').innerHTML, /Timbre pendiente/);
-  await contexto.vender({ id: 1, nombre: 'Ducha', precio: 2000 }, null);
-  assert.equal(ventas, 1, 'Una boleta incompleta bloquea el siguiente cobro');
-  await elemento('btn_imprimir_boleta').onclick.call(elemento('btn_imprimir_boleta'));
-  assert.equal(impresiones, 1);
-  assert.equal(ventas, 1, 'Reintentar imprimir no crea otra venta');
+  assert.equal(ventas, 1);
+  assert.doesNotMatch(elemento('resultado').innerHTML, /btn_imprimir_boleta|Imprimir boleta/);
+  assert.match(elemento('resultado').innerHTML, /Ver PDF/);
   siguiente = { ...siguiente, kame_timbre_disponible: true, kame_error_documento: '' };
   await contexto.vender({ id: 1, nombre: 'Ducha', precio: 2000 }, null);
-  assert.equal(impresiones, 2, 'El timbre listo permite impresion automatica');
+  assert.equal(impresiones, 1, 'El timbre listo abre impresion incluso con el ajuste manual anterior');
+  assert.doesNotMatch(elemento('resultado').innerHTML, /btn_imprimir_boleta|Imprimir boleta/);
+  assert.match(elemento('resultado').innerHTML, /Ver PDF/);
   assert.match(elemento('resultado').innerHTML, /Timbre listo/);
-  console.log('Impresion automatica con timbre y reintento sin nueva venta: OK');
+  console.log('Impresion automatica con timbre, sin boton manual y con PDF: OK');
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -1,7 +1,7 @@
 const equipoLocal = {
   leer() {
-    try { return { impresora_automatica: "0", lector_modo: "teclado", ...JSON.parse(localStorage.getItem("sanitapoint.equipo") || "{}") }; }
-    catch { return { impresora_automatica: "0", lector_modo: "teclado" }; }
+    try { return { lector_modo: "teclado", ...JSON.parse(localStorage.getItem("sanitapoint.equipo") || "{}"), impresora_automatica: "1" }; }
+    catch { return { impresora_automatica: "1", lector_modo: "teclado" }; }
   },
   guardar(valores) { localStorage.setItem("sanitapoint.equipo", JSON.stringify(valores)); },
   lector() { return { modo: this.leer().lector_modo }; },
@@ -16,6 +16,6 @@ const equipoLocal = {
     marco.style.cssText = "position:fixed;left:-10000px;width:320px;height:600px;border:0";
     marco.src = `/api/ventas/${encodeURIComponent(ticket)}/imprimir`;
     document.body.appendChild(marco);
-    return { ok: true, mensaje: "Selecciona la impresora de este computador en el dialogo de impresion." };
+    return { ok: true, mensaje: "" };
   }
 };

@@ -22,7 +22,10 @@ function puesto(storage = new Map()) {
   a.equipo.guardar({ impresora_automatica: '1', lector_modo: 'ninguno' });
   assert.equal(a.equipo.lector().modo, 'ninguno');
   assert.equal(b.equipo.lector().modo, 'teclado');
-  assert.equal(b.equipo.leer().impresora_automatica, '0');
+  assert.equal(b.equipo.leer().impresora_automatica, '1');
+  b.equipo.guardar({ impresora_automatica: '0', lector_modo: 'ninguno' });
+  assert.equal(puesto(b.storage).equipo.leer().impresora_automatica, '1', 'La opcion manual anterior no desactiva la impresion automatica');
+  assert.equal(puesto(b.storage).equipo.lector().modo, 'ninguno');
   assert.equal(puesto(a.storage).equipo.leer().impresora_automatica, '1');
   await a.equipo.imprimir('T000001');
   assert.equal(a.frames.length, 1);
@@ -34,6 +37,7 @@ function puesto(storage = new Map()) {
   assert.equal(a.frames.length, 1, 'No print view after denied access');
   a.storage.set('sanitapoint.equipo', '{invalid');
   assert.equal(a.equipo.lector().modo, 'teclado');
+  assert.equal(a.equipo.leer().impresora_automatica, '1');
   for (const file of ['config', 'historial', 'venta', 'usuarios', 'equipo']) {
     const html = fs.readFileSync(`app/templates/${file}.html`, 'utf8');
     for (const match of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) new vm.Script(match[1], { filename: file });
