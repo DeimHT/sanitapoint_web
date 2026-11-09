@@ -8,7 +8,7 @@ from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.deps import get_current_cuenta, require_cap
+from app.deps import get_current_cuenta, require_cap, require_any_cap
 from app.models import Caja, Cuenta, MovimientoCaja, Servicio, Usuario, Venta
 from app.permissions import EMITIR_BOLETAS, VER_HISTORIAL
 from app.routers.caja import _caja_abierta, bloquear_caja, comprobar_servicio
@@ -155,7 +155,7 @@ def venta_autorizada(ticket: str, db: Session, cuenta: Cuenta) -> Venta:
     return venta
 
 
-@router.get("/{ticket}/pdf", dependencies=[Depends(require_cap(VER_HISTORIAL))])
+@router.get("/{ticket}/pdf", dependencies=[Depends(require_any_cap(VER_HISTORIAL, EMITIR_BOLETAS))])
 def descargar_ticket_pdf(ticket: str, db: Session = Depends(get_db),
                          cuenta: Cuenta = Depends(get_current_cuenta)):
     venta = venta_autorizada(ticket, db, cuenta)
@@ -179,7 +179,7 @@ def descargar_ticket_pdf(ticket: str, db: Session = Depends(get_db),
                         headers={"Cache-Control": "no-store"})
 
 
-@router.post("/{ticket}/imprimir", dependencies=[Depends(require_cap(VER_HISTORIAL))])
+@router.post("/{ticket}/imprimir", dependencies=[Depends(require_any_cap(VER_HISTORIAL, EMITIR_BOLETAS))])
 def imprimir_boleta(ticket: str, db: Session = Depends(get_db),
                     cuenta: Cuenta = Depends(get_current_cuenta)):
     venta = venta_autorizada(ticket, db, cuenta)
@@ -196,7 +196,7 @@ def imprimir_boleta(ticket: str, db: Session = Depends(get_db),
 
 
 @router.get("/{ticket}/imprimir", response_class=HTMLResponse,
-            dependencies=[Depends(require_cap(VER_HISTORIAL))])
+            dependencies=[Depends(require_any_cap(VER_HISTORIAL, EMITIR_BOLETAS))])
 def vista_impresion(ticket: str, db: Session = Depends(get_db),
                     cuenta: Cuenta = Depends(get_current_cuenta)):
     import base64

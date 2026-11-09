@@ -25,3 +25,11 @@ def require_cap(cap: str):
             raise HTTPException(403, "No tienes permiso para esta acción")
         return cuenta
     return dep
+
+
+def require_any_cap(*caps: str):
+    def dep(cuenta: Cuenta = Depends(get_current_cuenta)) -> Cuenta:
+        if not (set(caps) & caps_de(cuenta.rol)):
+            raise HTTPException(403, "No tienes permiso para esta acción")
+        return cuenta
+    return dep

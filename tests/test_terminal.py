@@ -98,8 +98,7 @@ class TerminalTests(unittest.TestCase):
             printer.assert_not_called()
         for cookie, propio, ajeno in ((a, tickets[0], tickets[1]), (b, tickets[1], tickets[0])):
             status, ventas, _ = self.call("GET", "/api/ventas", cookie=cookie)
-            self.assertEqual(status, 200)
-            self.assertEqual([v["ticket"] for v in ventas], [propio])
+            self.assertEqual(status, 403)
             for metodo, sufijo in (("GET", "pdf"), ("POST", "imprimir"), ("GET", "imprimir")):
                 self.assertEqual(self.call(metodo, f"/api/ventas/{ajeno}/{sufijo}", cookie=cookie)[0], 404)
             self.assertEqual(self.call("POST", f"/api/ventas/{propio}/imprimir", cookie=cookie)[0], 200)
@@ -114,6 +113,50 @@ class TerminalTests(unittest.TestCase):
             self.assertEqual({v["ticket"] for v in ventas}, set(tickets))
             self.assertEqual({v["cajero"] for v in ventas}, {"Ana", "Beto"})
             self.assertEqual({v["servicio_caja"] for v in ventas}, {"Ba\u00f1o 1", "Ba\u00f1o 2"})
+
+    def test_cajero_no_administra_pases_ni_accede_a_modulos_restringidos(self):
+        from app.permissions import caps_de
+        cookie = self.login("a")
+        status, me, _ = self.call("GET", "/api/auth/me", cookie=cookie)
+        self.assertEqual(status, 200)
+        for cap in ("ver_historial", "gestionar_clientes", "config_equipo"):
+            self.assertNotIn(cap, me["caps"])
+        with patch("app.main.SessionLocal", return_value=Session(self.engine)):
+            for path in ("/historial", "/usuarios", "/equipo"):
+                self.assertEqual(self.call("GET", path, cookie=cookie)[0], 302)
+            for path in ("/", "/caja"):
+                status, html, _ = self.call("GET", path, cookie=cookie)
+                self.assertEqual(status, 200)
+                for clave in ("historial", "clientes", "equipo"):
+                    self.assertNotIn(f'data-nav="{clave}"', html)
+                self.assertIn('data-nav="venta">Ventas</a>', html)
+                self.assertIn('data-nav="caja">Caja</a>', html)
+        for method, path in (
+            ("GET", "/api/ventas"),
+            ("POST", "/api/usuarios"),
+            ("PUT", f"/api/usuarios/{self.cliente.id}"),
+            ("POST", f"/api/usuarios/{self.cliente.id}/desactivar"),
+            ("GET", f"/api/usuarios/{self.cliente.id}/pases"),
+        ):
+            self.assertEqual(self.call(method, path, cookie=cookie)[0], 403, path)
+        self.assertEqual(self.call("GET", "/api/usuarios", cookie=cookie)[0], 200)
+        self.assertEqual(self.call("GET", f"/api/usuarios/{self.cliente.id}/pases/check", cookie=cookie)[0], 200)
+        self.assertEqual(self.abrir(cookie)[0], 200)
+        status, pase, _ = self.call("POST", "/api/ventas", {
+            "servicio_id": self.bano.id, "forma_pago": "efectivo",
+            "es_pase_libre": True, "usuario_id": self.cliente.id}, cookie)
+        self.assertEqual(status, 200)
+        self.assertEqual(pase["monto"], 0)
+        self.assertTrue(pase["es_pase_libre"])
+        admin = self.login("admin")
+        self.assertEqual(self.call("GET", "/api/ventas", cookie=admin)[0], 200)
+        self.assertIn("gestionar_clientes", caps_de("administrador"))
+        self.assertIn("config_equipo", caps_de("administrador"))
+        with patch("app.main.SessionLocal", return_value=Session(self.engine)):
+            status, html, _ = self.call("GET", "/", cookie=admin)
+            self.assertEqual(status, 200)
+            for clave in ("historial", "clientes", "equipo"):
+                self.assertIn(f'data-nav="{clave}"', html)
 
     def test_apertura_concurrente_distintos_cajeros_mismo_bano(self):
         ids = (self.a.id, self.b.id)

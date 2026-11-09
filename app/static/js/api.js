@@ -88,6 +88,7 @@ const NAV_CAPS = {
   reportes: ["ver_reportes"],
   config: ["configuracion"],
   cuentas: ["gestionar_cuentas"],
+  equipo: ["config_equipo"],
 };
 
 function puede(cap) {
@@ -111,10 +112,15 @@ async function cargarUsuarioNav() {
     const rolLabel = ETIQUETA_ROL[cuentaActual.rol] || cuentaActual.rol;
     nav.textContent = `${cuentaActual.nombre || cuentaActual.username} · ${rolLabel}`;
   }
-  // Mostrar cada enlace del nav si el rol tiene alguna de sus capacidades.
+  // Compatibilidad con paginas servidas durante una recarga del proceso:
+  // si aun no tienen el contexto del menu, aplicar los permisos de la sesion.
   document.querySelectorAll("header.topnav a[data-nav]").forEach((a) => {
-    const caps = NAV_CAPS[a.dataset.nav] || [];
-    a.hidden = !caps.some((c) => puede(c));
+    if (cuentaActual.rol === "cajero") {
+      a.hidden = !["venta", "caja"].includes(a.dataset.nav);
+    } else {
+      const caps = NAV_CAPS[a.dataset.nav] || [];
+      a.hidden = !caps.some(c => puede(c)) && a.dataset.nav !== "equipo";
+    }
   });
   const btn = document.getElementById("nav_logout");
   if (btn) {

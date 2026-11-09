@@ -170,7 +170,7 @@ PAGES = {
     "/cierres": ("cierres.html", {perms.VER_CIERRES}),
     "/usuarios": ("usuarios.html", {perms.GESTION_CLIENTES}),
     "/reportes": ("reportes.html", {perms.VER_REPORTES}),
-    "/equipo": ("equipo.html", perms.TODAS),
+    "/equipo": ("equipo.html", {perms.CONFIG_EQUIPO}),
     "/config": ("config.html", {perms.CONFIGURACION}),
     "/cuentas": ("cuentas.html", {perms.GESTION_CUENTAS}),
 }
@@ -203,7 +203,12 @@ def _make_page(path: str, template: str, caps_permitidas: set):
         if not (perms.caps_de(cuenta.rol) & caps_permitidas):
             # No puede ver esta página → a su inicio según rol.
             return RedirectResponse(_home_path(cuenta), status_code=302)
-        return templates.TemplateResponse(request, template, {})
+        capacidades = perms.caps_de(cuenta.rol)
+        nav_permitidos = {ruta for ruta, (_, requeridas) in PAGES.items()
+                          if capacidades & requeridas}
+        return templates.TemplateResponse(request, template,
+                                          {"nav_permitidos": nav_permitidos},
+                                          headers={"Cache-Control": "no-store"})
     app.get(path, include_in_schema=False)(handler)
 
 

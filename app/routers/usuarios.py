@@ -5,14 +5,14 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
 from app.database import get_db
-from app.deps import require_cap
+from app.deps import get_current_cuenta, require_cap, require_any_cap
 from app.models import Pase, Usuario
-from app.permissions import GESTION_CLIENTES
+from app.permissions import EMITIR_BOLETAS, GESTION_CLIENTES
 from app.schemas import PaseIn, UsuarioIn, UsuarioOut
 from app.services.config_store import get_config
 
 router = APIRouter(prefix="/api/usuarios", tags=["usuarios"],
-                   dependencies=[Depends(require_cap(GESTION_CLIENTES))])
+                   dependencies=[Depends(get_current_cuenta)])
 
 
 def _max_pases_dia(db: Session) -> int:
@@ -29,7 +29,7 @@ def _pases_usados_hoy(db: Session, usuario_id: int) -> int:
     )
 
 
-@router.get("", response_model=list[UsuarioOut])
+@router.get("", response_model=list[UsuarioOut], dependencies=[Depends(require_any_cap(GESTION_CLIENTES, EMITIR_BOLETAS))])
 def listar_usuarios(solo_activos: bool = True, db: Session = Depends(get_db)):
     q = db.query(Usuario)
     if solo_activos:
@@ -37,12 +37,12 @@ def listar_usuarios(solo_activos: bool = True, db: Session = Depends(get_db)):
     return q.order_by(Usuario.nombre).all()
 
 
-@router.get("/lector/config")
+@router.get("/lector/config", dependencies=[Depends(require_any_cap(GESTION_CLIENTES, EMITIR_BOLETAS))])
 def configuracion_lector(db: Session = Depends(get_db)):
     return {"modo": "teclado", "nombre": "USB teclado local", "configuracion": "navegador"}
 
 
-@router.get("/{usuario_id}", response_model=UsuarioOut)
+@router.get("/{usuario_id}", response_model=UsuarioOut, dependencies=[Depends(require_cap(GESTION_CLIENTES))])
 def obtener_usuario(usuario_id: int, db: Session = Depends(get_db)):
     usuario = db.get(Usuario, usuario_id)
     if not usuario:
@@ -50,7 +50,7 @@ def obtener_usuario(usuario_id: int, db: Session = Depends(get_db)):
     return usuario
 
 
-@router.post("", response_model=UsuarioOut)
+@router.post("", response_model=UsuarioOut, dependencies=[Depends(require_cap(GESTION_CLIENTES))])
 def crear_usuario(body: UsuarioIn, db: Session = Depends(get_db)):
     rut = body.rut.replace(".", "").replace(" ", "").upper()
     if any((u.rut or "").replace(".", "").replace(" ", "").upper() == rut for u in db.query(Usuario).all()):
@@ -66,7 +66,7 @@ def crear_usuario(body: UsuarioIn, db: Session = Depends(get_db)):
     return usuario
 
 
-@router.put("/{usuario_id}", response_model=UsuarioOut)
+@router.put("/{usuario_id}", response_model=UsuarioOut, dependencies=[Depends(require_cap(GESTION_CLIENTES))])
 def editar_usuario(usuario_id: int, body: UsuarioIn, db: Session = Depends(get_db)):
     usuario = db.get(Usuario, usuario_id)
     if not usuario:
@@ -78,7 +78,7 @@ def editar_usuario(usuario_id: int, body: UsuarioIn, db: Session = Depends(get_d
     return usuario
 
 
-@router.post("/{usuario_id}/desactivar")
+@router.post("/{usuario_id}/desactivar", dependencies=[Depends(require_cap(GESTION_CLIENTES))])
 def desactivar_usuario(usuario_id: int, db: Session = Depends(get_db)):
     usuario = db.get(Usuario, usuario_id)
     if not usuario:
@@ -88,7 +88,7 @@ def desactivar_usuario(usuario_id: int, db: Session = Depends(get_db)):
     return {"ok": True}
 
 
-@router.get("/{usuario_id}/pases")
+@router.get("/{usuario_id}/pases", dependencies=[Depends(require_cap(GESTION_CLIENTES))])
 def ver_pases(usuario_id: int, db: Session = Depends(get_db)):
     pases = (
         db.query(Pase).filter(Pase.usuario_id == usuario_id).order_by(Pase.id.desc()).all()
@@ -104,7 +104,7 @@ def ver_pases(usuario_id: int, db: Session = Depends(get_db)):
     ]
 
 
-@router.get("/{usuario_id}/pases/check")
+@router.get("/{usuario_id}/pases/check", dependencies=[Depends(require_any_cap(GESTION_CLIENTES, EMITIR_BOLETAS))])
 def check_pase(usuario_id: int, db: Session = Depends(get_db)):
     usados = _pases_usados_hoy(db, usuario_id)
     maximo = _max_pases_dia(db)

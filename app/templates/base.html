@@ -4,31 +4,33 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}SanitaPoint{% endblock %}</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=5">
-  <script src="/static/js/api.js?v=5"></script>
-  <script src="/static/js/equipo.js?v=1"></script>
+  <link rel="stylesheet" href="/static/css/style.css?v=6">
+  <script src="/static/js/api.js?v=8"></script>
+  <script src="/static/js/equipo.js?v=3"></script>
   <script src="/static/js/cuadre.js?v=1"></script>
   {% block extra_head %}{% endblock %}
 </head>
 <body>
   <header class="topnav">
     <span class="brand">🚿 SanitaPoint</span>
-    <a href="/" data-nav="venta" hidden>Venta</a>
-    <a href="/caja" data-nav="caja" hidden>Caja</a>
-    <a href="/historial" data-nav="historial" hidden>Historial</a>
-    <a href="/cierres" data-nav="cierres" hidden>Cierres</a>
-    <a href="/usuarios" data-nav="clientes" hidden>Pases libres</a>
-    <a href="/reportes" data-nav="reportes" hidden>Reportes</a>
-    <a href="/config" data-nav="config" hidden>Configuración</a>
-    <a href="/cuentas" data-nav="cuentas" hidden>Cuentas</a>
-    <a href="/equipo">Este computador</a>
+    {% for ruta, clave, etiqueta in [
+      ('/', 'venta', 'Ventas'), ('/caja', 'caja', 'Caja'),
+      ('/historial', 'historial', 'Historial'), ('/cierres', 'cierres', 'Cierres'),
+      ('/usuarios', 'clientes', 'Pases libres'), ('/reportes', 'reportes', 'Reportes'),
+      ('/config', 'config', 'Configuración'), ('/cuentas', 'cuentas', 'Cuentas'),
+      ('/equipo', 'equipo', 'Este computador')
+    ] %}
+      {% if nav_permitidos is not defined or ruta in nav_permitidos %}
+    <a href="{{ ruta }}" data-nav="{{ clave }}"{% if nav_permitidos is not defined %} hidden{% endif %}>{{ etiqueta }}</a>
+      {% endif %}
+    {% endfor %}
     <span class="nav-spacer"></span>
     <span id="nav_servicio" class="nav-servicio" hidden></span>
     <span id="nav_user" class="nav-user"></span>
     <button id="nav_logout" class="btn btn-gris nav-logout" hidden>Salir</button>
   </header>
   <div id="statusbar">Cargando estado…</div>
-  <main>
+  <main class="{% block main_class %}{% endblock %}">
     {% block content %}{% endblock %}
   </main>
 </body>

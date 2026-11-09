@@ -23,10 +23,11 @@ VER_CIERRES = "ver_cierres"            # ver los cierres de caja
 GESTION_CLIENTES = "gestionar_clientes"  # clientes y pases libres
 GESTION_CUENTAS = "gestionar_cuentas"  # administrar cuentas / claves
 CONFIGURACION = "configuracion"        # KAME, tarifas, impresora
+CONFIG_EQUIPO = "config_equipo"        # ajustes locales del computador
 
 TODAS = {
     EMITIR_BOLETAS, CAJA_APERTURA, CAJA_CIERRE, CAJA_RETIRO, VER_HISTORIAL,
-    VER_REPORTES, VER_CIERRES, GESTION_CLIENTES, GESTION_CUENTAS, CONFIGURACION,
+    VER_REPORTES, VER_CIERRES, GESTION_CLIENTES, GESTION_CUENTAS, CONFIGURACION, CONFIG_EQUIPO,
 }
 
 # ── Roles ────────────────────────────────────────────────────────────────────
@@ -41,13 +42,13 @@ ETIQUETA_ROL = {
 
 CAPS_POR_ROL: dict[str, set[str]] = {
     "cajero": {
-        EMITIR_BOLETAS, CAJA_APERTURA, CAJA_CIERRE, VER_HISTORIAL, GESTION_CLIENTES,
+        EMITIR_BOLETAS, CAJA_APERTURA, CAJA_CIERRE,
     },
     "supervisor": {
-        CAJA_RETIRO, VER_HISTORIAL,
+        CAJA_RETIRO, VER_HISTORIAL, CONFIG_EQUIPO,
     },
     "contabilidad": {
-        VER_REPORTES, VER_CIERRES, VER_HISTORIAL, GESTION_CUENTAS,
+        VER_REPORTES, VER_CIERRES, VER_HISTORIAL, GESTION_CUENTAS, CONFIG_EQUIPO,
     },
     "administrador": set(TODAS),
 }
