@@ -127,8 +127,8 @@ class DocumentosKameTests(unittest.TestCase):
         self.assertEqual(self.venta.estado_kame, "ok")
         self.assertFalse(self.venta.kame_timbre_disponible)
         self.assertIn("reintenta", self.venta.kame_error_documento.lower())
-        self.assertEqual(self.get.call_count, 1)
-        self.assertLessEqual(sum(self.get.call_args.kwargs['timeout']), 3)
+        self.assertEqual(self.get.call_count, len(documentos.INTERVALOS_TIMBRE) + 1)
+        self.assertLessEqual(sum(self.get.call_args.kwargs['timeout']), 8)
         self.get.return_value = respuesta({"Estado": "Ok", "Xml": XML})
         imprimir_boleta(self.venta.ticket, self.db, self.cuenta)
         self.assertTrue(self.venta.kame_timbre_disponible)
@@ -224,16 +224,15 @@ class DocumentosKameTests(unittest.TestCase):
         self.assertEqual(self.post.call_count, 1)
         self.assertEqual(self.get.call_count, 1)
 
-    def test_xml_transitorio_se_recupera_al_imprimir_sin_reemitir(self):
+    def test_xml_transitorio_se_recupera_al_emitir_sin_reemitir(self):
         self.get.side_effect = [respuesta({}, 404), respuesta({"Estado": "Ok", "Xml": ""}),
                                 respuesta({"Estado": "Ok", "Xml": XML})]
         folio, estado = emitir_boleta(self.db, "Ducha", 2000, "efectivo", ticket_num=self.venta.ticket)
         self.assertEqual((folio, estado), ("456", "ok"))
-        self.assertFalse(self.venta.kame_timbre_disponible)
-        self.assertEqual(self.get.call_count, 1)
-        imprimir_boleta(self.venta.ticket, self.db, self.cuenta)
         self.assertTrue(self.venta.kame_timbre_disponible)
         self.assertEqual(self.get.call_count, 3)
+        imprimir_boleta(self.venta.ticket, self.db, self.cuenta)
+        self.assertEqual(self.get.call_count, 3, "La impresion reutiliza el timbre recuperado")
         self.assertEqual(self.post.call_count, 1)
 
     def test_timbre_pendiente_no_bloquea_nuevo_cobro(self):

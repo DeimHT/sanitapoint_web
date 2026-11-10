@@ -424,16 +424,13 @@ def emitir_boleta(db, servicio_nombre, monto_total, forma_pago, rut_cliente=None
             venta.estado_kame = 'ok'
             db.commit()
             # Una falla al obtener el timbre nunca convierte una emision en fallida.
-            anterior = getattr(client, '_documento_deadline', None)
-            client._documento_deadline = time.monotonic() + 3
             try:
-                # Una consulta breve. Los reintentos largos quedan para Imprimir.
-                preparar_timbre(db, venta, client=client, exigir=False, esperar=False)
+                # KAME puede confirmar el folio antes de publicar el XML firmado.
+                # Reintentar la consulta de esta misma boleta, sin volver a emitir.
+                preparar_timbre(db, venta, client=client, exigir=False, esperar=True)
             except Exception:
                 # La emision confirmada no se repite por un fallo local de impresion.
                 import logging
                 logging.getLogger(__name__).exception("No se pudo preparar la impresion de la boleta emitida")
                 db.rollback()
-            finally:
-                client._documento_deadline = anterior
     return (result['folio'], 'ok') if result['ok'] else (result['mensaje'], 'error')
