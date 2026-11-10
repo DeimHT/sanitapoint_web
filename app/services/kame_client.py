@@ -225,7 +225,9 @@ class KameAPI:
             restante = limite - time.monotonic()
             if restante <= 0:
                 raise DocumentoKameTemporal("Se agoto la espera del timbre de esta boleta.")
-            return (min(3, restante / 2), min(5, restante / 2))
+            # Admitir respuestas lentas sin consumir otro plazo completo por
+            # intento. Ambos límites se reducen según la espera total restante.
+            return (min(5, restante / 2), min(30, restante / 2))
         try:
             self.token = self._obtener_token(timeout=tiempo_disponible())
             url = f"{self.base_url}/api/Documento/getDocumento{formato}/{rut_emisor}/{tipo}/{folio}"

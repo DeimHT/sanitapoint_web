@@ -5,7 +5,13 @@ const api = {
     if (!r.ok) throw await api._err(r);
     return r.json();
   },
-  async post(path, body, { timeoutMs = 60000 } = {}) {
+  _timeoutPost(path) {
+    // El cobro incluye autenticación/emisión y hasta 120 s de recuperación XML.
+    if (path === "/api/ventas") return 210000;
+    if (/^\/api\/ventas\/[^/]+\/imprimir$/.test(path)) return 150000;
+    return 60000;
+  },
+  async post(path, body, { timeoutMs = api._timeoutPost(path) } = {}) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {

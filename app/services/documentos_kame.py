@@ -32,8 +32,10 @@ class DocumentoKameTemporal(DocumentoKameError):
         self.reintentar_en = reintentar_en
 
 
-ESPERA_TIMBRE_SEGUNDOS = 20
-INTERVALOS_TIMBRE = (1, 2, 3, 5, 5)
+ESPERA_TIMBRE_SEGUNDOS = 120
+# Con respuestas inmediatas, la última consulta comienza a los 116 segundos.
+# El plazo total también descuenta autenticación y duración de cada consulta.
+INTERVALOS_TIMBRE = (1, 2, 3, 5, 10, 15, 20, 20, 20, 20)
 
 
 def normalizar_rut(rut):

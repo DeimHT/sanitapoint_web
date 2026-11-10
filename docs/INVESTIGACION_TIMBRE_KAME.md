@@ -4,7 +4,7 @@
 
 La integración utiliza la ruta publicada para recuperar el XML firmado. Se confirmó un defecto local de diagnóstico: cualquier error lógico recibido con HTTP 200 se convertía en «KAME todavía no tiene disponible el documento»; al agotar los intentos también se descartaba la causa original. Por ello, los dos avisos reportados no permiten concluir que KAME simplemente esté demorando.
 
-No se ha determinado la causa de las cuatro boletas del incidente. La base y los registros de ese servidor están en otro equipo, accesible por AnyDesk. La copia local y sus credenciales no prueban el comportamiento de producción.
+No se ha determinado la causa de las cuatro boletas del incidente. La base y los registros de ese servidor están en otro equipo, accesible por AnyDesk. La copia local y sus credenciales no prueban el comportamiento de producción. Los resultados posteriores aportados desde el servidor se detallan al final.
 
 ## Contrato comprobado en la documentación de KAME
 
@@ -44,3 +44,11 @@ Los cambios están preparados en el repositorio local. No se ha actualizado el s
 ## Validación realizada
 
 Pasaron 47 pruebas de documentos y cliente KAME con respuestas simuladas, incluyendo errores HTTP 200, recuperación posterior sin reemisión, rechazos de permisos, `Retry-After` numérico y por fecha, ocultación de credenciales, consulta de XML/PDF/registro ERP y lectura SQLite sin crear ni modificar la base. Se ejecutó también el comando real sobre el ticket local T000008: produjo el diagnóstico esperado y los hashes de la base SQLite y `.env` permanecieron iguales. `git diff --check` no detectó errores de formato.
+
+## Seguimiento con resultados del servidor
+
+El diagnóstico compartido desde producción devuelve XML y PDF disponibles para los tickets T006577–T006580, folios 8006178–8006181. Sus registros en el ERP coinciden en folio y monto. Ninguno tenía XML en cache; el diagnóstico no los guarda ni actualiza ese estado. La captura posterior muestra el PDF del folio 8006177, por $500 y con timbre visible; ese folio no figura entre los cuatro XML comprobados en el informe. Abrir un PDF no comprueba por sí solo el XML de esa misma boleta ni actualiza su estado térmico.
+
+Estos datos son compatibles con una falla transitoria o publicación tardía, sin demostrar cuál fue la respuesta inicial ni cuánto tardó en estar disponible. Se amplió la recuperación a un presupuesto de 120 segundos y once consultas espaciadas, con última consulta a los 116 segundos si las respuestas son inmediatas. El navegador espera 210 segundos para el flujo de venta completo y 150 para preparar una reimpresión. La emisión conserva su timeout de 15 segundos; no se reemite para obtener un timbre. No se cambió `.env` ni se emitieron documentos reales para probar esta modificación.
+
+Pasaron 51 pruebas Python y las cuatro suites JavaScript de timeout, protección del cobro, timbre e impresión local. Los casos nuevos usan reloj simulado: XML publicado después de 90 segundos, respuesta de lectura de 25 segundos, agotamiento del presupuesto de 120 segundos y `Retry-After` de 60 segundos, sin repetir la emisión.

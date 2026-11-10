@@ -131,7 +131,7 @@ class DocumentosKameTests(unittest.TestCase):
         self.assertFalse(self.venta.kame_timbre_disponible)
         self.assertIn("reintenta", self.venta.kame_error_documento.lower())
         self.assertEqual(self.get.call_count, len(documentos.INTERVALOS_TIMBRE) + 1)
-        self.assertLessEqual(sum(self.get.call_args.kwargs['timeout']), 8)
+        self.assertLessEqual(sum(self.get.call_args.kwargs['timeout']), 35)
         self.get.return_value = respuesta({"Estado": "Ok", "Xml": XML})
         imprimir_boleta(self.venta.ticket, self.db, self.cuenta)
         self.assertTrue(self.venta.kame_timbre_disponible)
@@ -295,6 +295,69 @@ class DocumentosKameTests(unittest.TestCase):
         self.assertEqual(self.get.call_count, 2)
         self.post.assert_not_called()
 
+    def test_xml_publicado_despues_de_90_segundos_se_recupera_sin_reemitir(self):
+        reloj = [0.0]
+        def dormir(segundos):
+            reloj[0] += segundos
+        def consultar(*args, **kwargs):
+            if reloj[0] < 90:
+                return respuesta({'Estado': 'Error', 'Error': [
+                    {'ErrorMessage': 'No existe el documento electronico registrado en el ERP'}]})
+            return respuesta({'Estado': 'Ok', 'Xml': XML})
+        self.get.side_effect = consultar
+        with patch('app.services.documentos_kame.time.monotonic', side_effect=lambda: reloj[0]), \
+             patch('app.services.documentos_kame.time.sleep', side_effect=dormir):
+            self.assertEqual(emitir_boleta(self.db, 'Ducha', 2000, 'efectivo',
+                                          ticket_num=self.venta.ticket), ('456', 'ok'))
+        self.assertGreaterEqual(reloj[0], 90)
+        self.assertLessEqual(reloj[0], 120)
+        self.assertTrue(self.venta.kame_timbre_disponible)
+        self.assertEqual(self.venta.kame_error_documento, '')
+        self.post.assert_called_once()
+        consultas = self.get.call_count
+        imprimir_boleta(self.venta.ticket, self.db, self.cuenta)
+        self.assertEqual(self.get.call_count, consultas, 'La impresion usa el XML recuperado en cache')
+
+    def test_consultas_lentas_agotan_presupuesto_sin_superar_120_segundos(self):
+        reloj = [0.0]
+        inicios = []
+        def dormir(segundos):
+            reloj[0] += segundos
+        def consultar(*args, **kwargs):
+            inicios.append(reloj[0])
+            reloj[0] += min(25, sum(kwargs['timeout']))
+            return respuesta({}, 404)
+        self.get.side_effect = consultar
+        with patch('app.services.documentos_kame.time.monotonic', side_effect=lambda: reloj[0]), \
+             patch('app.services.documentos_kame.time.sleep', side_effect=dormir):
+            with self.assertRaisesRegex(documentos.DocumentoKameError, 'HTTP 404'):
+                documentos.preparar_timbre(self.db, self.venta, esperar=True)
+        self.assertGreater(reloj[0], 90)
+        self.assertLessEqual(reloj[0], 120)
+        self.assertTrue(all(inicio < 120 for inicio in inicios))
+        self.assertEqual(self.venta.estado_kame, 'ok')
+        self.assertEqual(self.venta.folio_kame, '456')
+        self.post.assert_not_called()
+
+    def test_consulta_xml_tolera_respuesta_de_25_segundos(self):
+        reloj = [0.0]
+        def dormir(segundos):
+            reloj[0] += segundos
+        def consultar(*args, **kwargs):
+            espera_lectura = kwargs['timeout'][1]
+            reloj[0] += min(25, espera_lectura)
+            if espera_lectura < 25:
+                raise requests.exceptions.ReadTimeout()
+            return respuesta({'Estado': 'Ok', 'Xml': XML})
+        self.get.side_effect = consultar
+        with patch('app.services.documentos_kame.time.monotonic', side_effect=lambda: reloj[0]), \
+             patch('app.services.documentos_kame.time.sleep', side_effect=dormir):
+            documentos.preparar_timbre(self.db, self.venta, esperar=True)
+        self.assertEqual(reloj[0], 25)
+        self.assertTrue(self.venta.kame_timbre_disponible)
+        self.get.assert_called_once()
+        self.post.assert_not_called()
+
     def test_rechazo_json_de_permisos_no_se_confunde_con_preparacion(self):
         self.get.return_value = respuesta({"Estado": "Error", "Error": [
             {"ErrorMessage": "Usuario no autorizado para consultar documentos"}]})
@@ -329,12 +392,22 @@ class DocumentosKameTests(unittest.TestCase):
         self.post.assert_not_called()
 
     def test_retry_after_largo_no_reintenta_dentro_de_atencion(self):
-        self.get.return_value = respuesta({}, 503, {"Retry-After": "60"})
+        self.get.return_value = respuesta({}, 503, {"Retry-After": "180"})
         with patch('app.services.documentos_kame.time.sleep') as dormir:
             with self.assertRaisesRegex(documentos.DocumentoKameError, "HTTP 503"):
                 documentos.preparar_timbre(self.db, self.venta, esperar=True)
         self.assertEqual(self.get.call_count, 1)
         dormir.assert_not_called()
+        self.post.assert_not_called()
+
+    def test_retry_after_de_60_segundos_admite_recuperar_el_mismo_folio(self):
+        self.get.side_effect = [respuesta({}, 503, {'Retry-After': '60'}),
+                                respuesta({'Estado': 'Ok', 'Xml': XML})]
+        with patch('app.services.documentos_kame.time.sleep') as dormir:
+            documentos.preparar_timbre(self.db, self.venta, esperar=True)
+        dormir.assert_called_once_with(60)
+        self.assertTrue(self.venta.kame_timbre_disponible)
+        self.assertEqual(self.get.call_count, 2)
         self.post.assert_not_called()
 
     def test_retry_after_fecha_http_e_invalido(self):
