@@ -7,7 +7,7 @@ const equipoLocal = {
   lector() { return { modo: this.leer().lector_modo }; },
   async imprimir(ticket) {
     // Verifica permisos antes de abrir el documento en el puesto actual.
-    await api.post(`/api/ventas/${encodeURIComponent(ticket)}/imprimir`, {});
+    const resultado = await api.post(`/api/ventas/${encodeURIComponent(ticket)}/imprimir`, {});
     const anterior = document.getElementById("impresion_local");
     if (anterior) anterior.remove();
     const marco = document.createElement("iframe");
@@ -16,6 +16,6 @@ const equipoLocal = {
     marco.style.cssText = "position:fixed;left:-10000px;width:320px;height:600px;border:0";
     marco.src = `/api/ventas/${encodeURIComponent(ticket)}/imprimir`;
     document.body.appendChild(marco);
-    return { ok: true, mensaje: "" };
+    return { ok: true, venta: resultado?.venta, mensaje: "Impresión solicitada en este computador." };
   }
 };
