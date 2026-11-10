@@ -28,7 +28,7 @@ No copies la resolucion de los ejemplos. La impresion termica solicita estos dat
 
 ## Venta, impresion y recuperacion
 
-Despues de que KAME confirma la emision, se intenta recuperar el XML con el mismo cliente y token. La venta permanece emitida aunque falle esa consulta. Durante el cobro y al usar Imprimir se reintenta automaticamente la consulta del XML. Si el timbre sigue pendiente al agotarse la espera, se permite atender otra venta y recuperarlo desde Historial > Imprimir. Cada recuperacion admite hasta seis consultas de lectura, con pausas de 1, 2, 3, 5 y 5 segundos y un presupuesto de espera de 20 segundos. Solo se reintentan consultas de documentos existentes; nunca se repite la emision para conseguir su timbre.
+Despues de que KAME confirma la emision, se intenta recuperar el XML con el mismo cliente y token. La venta permanece emitida aunque falle esa consulta. Durante el cobro y al usar Imprimir se reintenta automaticamente la consulta del XML. Si el timbre sigue pendiente al agotarse la espera, se permite atender otra venta y recuperarlo desde Historial > Imprimir. Cada recuperacion admite hasta seis consultas de lectura, con pausas de 1, 2, 3, 5 y 5 segundos y un presupuesto de espera de 20 segundos. Se respeta un `Retry-After` mayor; si excede la espera disponible, se termina sin consultar antes de ese plazo. Solo se reintentan consultas de documentos existentes; nunca se repite la emision para conseguir su timbre.
 
 Las solicitudes POST del navegador tienen un limite de espera de 60 segundos. Si vence durante el cobro, se muestra un aviso de resultado incierto y no se permite repetirlo desde esa pantalla: hay que comprobar Historial y el estado de KAME antes de continuar. Cancelar la espera del navegador no cancela la operacion en el servidor. La consola registra el inicio y la duracion del envio, el folio confirmado y los errores HTTP o de conexion al consultar documentos, sin imprimir credenciales.
 
@@ -40,7 +40,27 @@ Si esta activada la impresion automatica de **Este computador**, se abre el dial
 
 XML y PDF se guardan bajo `data/documentos_kame`, fuera de los archivos publicos. Se verifican permisos de la venta antes de acceder a ellos. El cache evita consultas repetidas y permite reimprimir documentos ya recuperados sin internet. Los errores no se guardan como documentos validos. Respalda esta carpeta aparte si necesitas conservar las copias locales para operar sin conexion despues de restaurar: el respaldo diario SQLite incluye los registros, pero no esos archivos.
 
-La documentacion general de KAME establece un limite por IP; el cache, las pausas entre consultas y el limite de intentos reducen peticiones. [Politica de trafico](https://mzujlb48px.apidog.io/informaci%C3%B3n-general-8702595f0).
+La documentacion general de KAME establece un limite de **180 peticiones por minuto por IP** y un bloqueo temporal con **HTTP 403** al superarlo. El cache, las pausas entre consultas y el limite de intentos reducen peticiones. Un 403 tambien puede corresponder a permisos; no se reintenta automaticamente durante la atencion. [Politica de trafico](https://mzujlb48px.apidog.io/informaci%C3%B3n-general-8702595f0).
+
+## Diagnosticar un timbre no disponible
+
+KAME puede responder **HTTP 200** con `Estado: "Error"` y una lista `Error` con `ErrorMessage`. El HTTP 200 no confirma que exista el documento. Se conserva ese motivo en pantalla, en `kame_error_documento` y en consola con ticket y folio, ocultando credenciales y datos personales. Si se agotan los reintentos, el aviso conserva el ultimo motivo; no se reemplaza por una supuesta demora generica. La ausencia del documento admite una espera limitada porque puede ocurrir justo despues de emitir; no prueba que vaya a aparecer. Los otros rechazos del JSON requieren revision y no se reintentan a ciegas.
+
+Para revisar el servidor mediante AnyDesk, abre PowerShell **en la carpeta de la aplicacion** y ejecuta:
+
+```powershell
+.venv\Scripts\python.exe -X utf8 scripts\diagnosticar_kame.py --ultimas 4 > diagnostico-kame.txt
+```
+
+Tambien admite `--ticket T000123` y `--base-datos C:\ruta\sanitapoint.db`. Usa la base SQLite configurada en `DATABASE_URL` o, por defecto, `data/sanitapoint.db`; la abre con `mode=ro`. No modifica ventas, documentos en cache ni `.env`, ni llama a `addVenta`. Usa las credenciales existentes para consultar documentos ya registrados, incluso si la configuracion local esta en modo mock. Realiza consultas nuevas para comparar la disponibilidad remota con el cache local. El informe contiene ticket, folio, estado local, disponibilidad del XML/PDF y existencia en el ERP; no incluye RUT, credenciales ni el contenido de los documentos. Los mensajes de consulta se muestran por separado en consola.
+
+La consulta adicional [Obtener Registro en Ventas](https://mzujlb48px.apidog.io/obtener-registro-en-ventas-35654367e0) usa `GET /api/Documento/getVenta/{documento}/{numero}`, con `Boleta Electrónica` y el folio. Permite distinguir el registro comercial del XML/PDF electronico:
+
+- Registro ERP presente y XML/PDF ausentes: verificar RUT emisor/tipo y pedir a KAME revisar la generacion electronica de ese folio. No basta con aumentar la espera.
+- Registro ERP tambien ausente: verificar que folio, empresa, ambiente y credenciales correspondan al servidor que emitio. No atribuirlo automaticamente a una caida de KAME.
+- XML recibido pero rechazado localmente: revisar identidad, monto, receptor, TED, resolucion o dependencias segun el motivo registrado.
+
+El analisis del incidente y sus limites estan en [Investigacion del timbre](INVESTIGACION_TIMBRE_KAME.md).
 
 ## Validacion
 
