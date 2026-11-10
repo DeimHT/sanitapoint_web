@@ -186,8 +186,21 @@ class DocumentosKameTests(unittest.TestCase):
         imprimir_boleta(self.venta.ticket, self.db, self.cuenta)
         salida = vista_impresion(self.venta.ticket, self.db, self.cuenta)
         self.assertIn(b'data:image/png;base64,', salida.body)
-        self.assertIn(b'window.print()', salida.body)
+        self.assertIn(b'/static/js/impresion.js?v=1', salida.body)
+        self.assertIn(b'/impresion-eventos/', salida.body)
         self.assertEqual(self.get.call_count, 1)
+
+    def test_eventos_impresion_identifican_ticket_sin_afirmar_salida_de_papel(self):
+        from app.routers.ventas import registrar_evento_impresion
+        with patch('builtins.print') as salida:
+            registrar_evento_impresion(self.venta.ticket, 'dialogo_cerrado', self.db, self.cuenta)
+        mensaje = salida.call_args.args[0]
+        self.assertIn(self.venta.ticket, mensaje)
+        self.assertIn('papel no confirmado', mensaje)
+        self.assertIn('cancelado', mensaje)
+        with self.assertRaises(HTTPException) as error:
+            registrar_evento_impresion(self.venta.ticket, 'dialogo_cerrado', self.db, self.otro)
+        self.assertEqual(error.exception.status_code, 404)
 
     def test_token_401_se_refresca_una_vez_sin_reemitir(self):
         os.environ.pop("KAME_TOKEN")

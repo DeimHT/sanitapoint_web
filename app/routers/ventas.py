@@ -1,6 +1,7 @@
 from datetime import date, datetime
 import time
 from uuid import uuid4
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse
@@ -191,8 +192,26 @@ def imprimir_boleta(ticket: str, db: Session = Depends(get_db),
         try:
             preparar_timbre(db, venta, esperar=True)
         except DocumentoKameError as error:
+            print(f'[IMPRESION] Bloqueada ticket={venta.ticket} folio={venta.folio_kame}: {error}', flush=True)
             raise HTTPException(503, str(error))
+    print(f'[IMPRESION] Preparada ticket={venta.ticket} folio={venta.folio_kame} caja={venta.caja_id}', flush=True)
     return {"ok": True, "mensaje": "Imprime desde el navegador de este computador.", "venta": VentaOut.model_validate(venta)}
+
+
+@router.post("/{ticket}/impresion-eventos/{evento}",
+             dependencies=[Depends(require_any_cap(VER_HISTORIAL, EMITIR_BOLETAS))])
+def registrar_evento_impresion(ticket: str, evento: Literal["solicitada", "dialogo_cerrado", "error"],
+                              db: Session = Depends(get_db),
+                              cuenta: Cuenta = Depends(get_current_cuenta)):
+    venta = venta_autorizada(ticket, db, cuenta)
+    mensajes = {
+        "solicitada": "Navegador solicito imprimir",
+        "dialogo_cerrado": "Dialogo de impresion cerrado (puede haberse impreso o cancelado; papel no confirmado)",
+        "error": "Error del navegador al cargar o solicitar la impresion",
+    }
+    print(f'[IMPRESION] {mensajes[evento]} ticket={venta.ticket} '
+          f'folio={venta.folio_kame} caja={venta.caja_id} cuenta={cuenta.id}', flush=True)
+    return {"ok": True}
 
 
 @router.get("/{ticket}/imprimir", response_class=HTMLResponse,
@@ -222,8 +241,11 @@ def vista_impresion(ticket: str, db: Session = Depends(get_db),
     imagen.save(buffer, format="PNG")
     datos = base64.b64encode(buffer.getvalue()).decode("ascii")
     alto_mm = imagen.height * 72 / imagen.width + 2
+    print(f'[IMPRESION] Documento servido al navegador ticket={venta.ticket} folio={venta.folio_kame}', flush=True)
     return HTMLResponse('<!doctype html><html lang="es"><meta charset="utf-8">'
         f'<title>Imprimir ticket</title><style>@page{{size:80mm {alto_mm:.1f}mm;margin:0}}'
         'body{margin:0}img{display:block;width:72mm;margin:0 4mm;max-width:100%}</style>'
-        '<img alt="Ticket" src="data:image/png;base64,' + datos + '" '
-        'onload="window.focus();window.print()"></html>', headers={"Cache-Control": "no-store"})
+        '<script src="/static/js/impresion.js?v=1" defer></script>'
+        f'<img id="ticket" data-eventos="/api/ventas/{venta.ticket}/impresion-eventos/" '
+        'alt="Ticket" src="data:image/png;base64,' + datos + '"></html>',
+        headers={"Cache-Control": "no-store"})
