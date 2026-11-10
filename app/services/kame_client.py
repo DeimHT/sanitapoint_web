@@ -3,7 +3,10 @@ Módulo de integración con la API de KAME (kame.cl)
 Emite boletas electrónicas tipo 39 (boleta de venta) ante el SII.
 """
 import os
+import math
+import re
 import time
+from email.utils import parsedate_to_datetime
 from decimal import Decimal, ROUND_HALF_UP
 import requests
 from datetime import datetime
@@ -174,6 +177,34 @@ class KameAPI:
         except Exception as e:
             return {'ok': False, 'mensaje': 'Respuesta de autenticación KAME inválida'}
 
+    def _detalle_error_documento(self, datos):
+        """Conserva ErrorMessage sin volcar el XML, PDF ni credenciales."""
+        detalle = ' '.join(self._extraer_errores(datos.get('Error')))
+        if not detalle:
+            detalle = f"Estado de respuesta: {datos.get('Estado') or 'no informado'}"
+        secretos = (self.token, self.client_secret, self.client_id, self.usuario,
+                    self._config('KAME_TOKEN', ''))
+        for secreto in sorted(filter(None, secretos), key=len, reverse=True):
+            detalle = detalle.replace(secreto, '[REDACTADO]')
+        detalle = re.sub(r'[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}', '[EMAIL]', detalle)
+        detalle = re.sub(r'\b\d{1,2}(?:\.?\d{3}){2}-[\dkK]\b', '[RUT]', detalle)
+        return ' '.join(detalle.split())[:500]
+
+    @staticmethod
+    def _espera_documento(respuesta):
+        """Retry-After puede expresarse en segundos o como fecha HTTP."""
+        valor = respuesta.headers.get('Retry-After')
+        if not valor:
+            return 0
+        try:
+            segundos = float(valor)
+        except (ValueError, TypeError):
+            try:
+                segundos = parsedate_to_datetime(valor).timestamp() - time.time()
+            except (ValueError, TypeError, OverflowError):
+                return 0
+        return max(0, segundos) if math.isfinite(segundos) else 0
+
     def obtener_documento(self, rut_emisor: str, tipo: str, folio: str, formato: str):
         """Consulta un documento existente; nunca invoca addVenta.
 
@@ -204,11 +235,15 @@ class KameAPI:
                 respuesta = requests.get(url, headers=self._headers(), timeout=tiempo_disponible(), allow_redirects=False)
             if respuesta.status_code != 200:
                 print(f'[KAME] Consulta {formato} folio={folio}: HTTP {respuesta.status_code}', flush=True)
-                mensaje = ("KAME aún no entrega el documento emitido. Reintenta Imprimir sin registrar otra venta."
+                mensaje = ("KAME rechazó el acceso al documento. Revisa permisos y el límite de 180 peticiones/minuto por IP."
+                           if respuesta.status_code == 403 else
+                           "KAME aún no entrega el documento emitido. Reintenta Imprimir sin registrar otra venta."
                            if respuesta.status_code in (404, 409, 202) else
                            "No se pudo recuperar el documento de KAME. Reintenta Imprimir sin registrar otra venta.")
-                error = DocumentoKameTemporal if respuesta.status_code in (202, 404, 409, 429, 500, 502, 503, 504) else DocumentoKameError
-                raise error(mensaje)
+                mensaje = f"Consulta {formato} a KAME (HTTP {respuesta.status_code}): {mensaje}"
+                if respuesta.status_code in (202, 404, 409, 429, 500, 502, 503, 504):
+                    raise DocumentoKameTemporal(mensaje, reintentar_en=self._espera_documento(respuesta))
+                raise DocumentoKameError(mensaje)
             if len(respuesta.content) > 16 * 1024 * 1024:
                 raise DocumentoKameError("El documento de KAME supera el tamaño permitido.")
             try:
@@ -219,8 +254,18 @@ class KameAPI:
                     raise DocumentoKameError("KAME devolvio un documento con formato no reconocido.")
                 datos = respuesta.text
             if isinstance(datos, dict) and (datos.get("Error") or (
-                    datos.get("Estado") and str(datos["Estado"]).lower() != "ok")):
-                raise DocumentoKameTemporal("KAME todavía no tiene disponible el documento. Reintenta Imprimir.")
+                    datos.get("Estado") and str(datos["Estado"]).strip().lower() != "ok")):
+                detalle = self._detalle_error_documento(datos)
+                print(f'[KAME] Consulta {formato} folio={folio}: HTTP 200; {detalle}', flush=True)
+                mensaje = f"Consulta {formato} a KAME (HTTP 200): {detalle}. La venta no debe repetirse."
+                # Un documento recién registrado puede no estar publicado todavía.
+                # Los rechazos restantes necesitan revisión, no más consultas ciegas.
+                temporal = re.search(r'no existe el documento|no se ha encontrado el documento|'
+                                     r'(?:documento|xml).*no.*disponible|preparando|en proceso|pendiente',
+                                     detalle, re.IGNORECASE)
+                if temporal:
+                    raise DocumentoKameTemporal(mensaje, reintentar_en=self._espera_documento(respuesta))
+                raise DocumentoKameError(mensaje)
             return datos
         except requests.RequestException as error_red:
             print(f'[KAME] Consulta {formato} folio={folio}: {type(error_red).__name__}', flush=True)

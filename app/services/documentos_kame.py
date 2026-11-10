@@ -27,6 +27,10 @@ class DocumentoKameError(ValueError):
 class DocumentoKameTemporal(DocumentoKameError):
     """Solo la consulta de un documento existente admite reintentos automaticos."""
 
+    def __init__(self, mensaje, reintentar_en=0):
+        super().__init__(mensaje)
+        self.reintentar_en = reintentar_en
+
 
 ESPERA_TIMBRE_SEGUNDOS = 20
 INTERVALOS_TIMBRE = (1, 2, 3, 5, 5)
@@ -184,13 +188,16 @@ def preparar_timbre(db, venta, client=None, exigir=True, esperar=False):
                     try:
                         info = obtener_timbre(venta, client)
                         break
-                    except DocumentoKameTemporal:
+                    except DocumentoKameTemporal as error:
                         restante = limite - time.monotonic()
-                        if intento == len(INTERVALOS_TIMBRE) or restante <= 0:
+                        pausa = max(INTERVALOS_TIMBRE[min(intento, len(INTERVALOS_TIMBRE) - 1)],
+                                    error.reintentar_en)
+                        if intento == len(INTERVALOS_TIMBRE) or pausa >= restante:
                             raise DocumentoKameError(
                                 "KAME no entrego el timbre dentro de la espera de esta atencion. "
-                                "La boleta ya fue emitida: reintenta completar esta misma boleta, sin volver a cobrar.") from None
-                        time.sleep(min(INTERVALOS_TIMBRE[intento], restante))
+                                "La boleta ya fue emitida: reintenta completar esta misma boleta, sin volver a cobrar. "
+                                f"Último motivo: {error}") from None
+                        time.sleep(pausa)
             finally:
                 client._documento_deadline = anterior
         else:
@@ -216,6 +223,7 @@ def preparar_timbre(db, venta, client=None, exigir=True, esperar=False):
         venta.kame_timbre_disponible = False
         venta.kame_error_documento = mensaje
         db.commit()
+        print(f'[KAME] Timbre no disponible ticket={venta.ticket} folio={venta.folio_kame}: {mensaje}', flush=True)
         if exigir:
             raise DocumentoKameError(mensaje) from None
         return None

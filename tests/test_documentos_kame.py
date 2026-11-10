@@ -1,7 +1,9 @@
 """Pruebas sin red ni emision real. Los XML y firmas son datos sinteticos."""
 import base64
+from contextlib import closing
 import json
 import os
+import sqlite3
 from pathlib import Path
 import tempfile
 import unittest
@@ -19,6 +21,7 @@ from app.routers.ventas import descargar_ticket_pdf, imprimir_boleta, registrar_
 from app.schemas import VentaIn
 from app.services import documentos_kame as documentos
 from app.services.kame_client import KameAPI, emitir_boleta
+from scripts.diagnosticar_kame import cargar_ventas, diagnosticar_venta
 
 
 TED = ('<TED version="1.0"><DD><RE>76123456-0</RE><TD>39</TD><F>456</F>'
@@ -40,8 +43,8 @@ XML = ('<?xml version="1.0" encoding="iso-8859-1"?>'
 PDF = b'%PDF-1.4\n%Documento sintetico para probar transporte\n%%EOF\n'
 
 
-def respuesta(data, status=200):
-    r = Mock(status_code=status)
+def respuesta(data, status=200, headers=None):
+    r = Mock(status_code=status, headers=headers or {})
     r.json.return_value = data
     r.content = json.dumps(data).encode()
     r.text = json.dumps(data)
@@ -266,6 +269,128 @@ class DocumentosKameTests(unittest.TestCase):
             documentos.preparar_timbre(self.db, self.venta, esperar=True)
         self.assertEqual(self.get.call_count, 1)
         self.post.assert_not_called()
+
+    def test_error_json_200_conserva_motivo_al_agotar_espera_sin_reemitir(self):
+        motivo = "Documento : No existe el documento electronico registrado en el ERP"
+        self.get.return_value = respuesta({"Estado": "Error", "Error": [
+            {"MemberNames": ["Documento"], "ErrorMessage": motivo}]})
+        with patch('builtins.print') as salida:
+            self.assertEqual(emitir_boleta(self.db, "Ducha", 2000, "efectivo",
+                                          ticket_num=self.venta.ticket), ("456", "ok"))
+        self.assertIn(motivo, self.venta.kame_error_documento)
+        self.assertIn("HTTP 200", self.venta.kame_error_documento)
+        self.assertIn("sin volver a cobrar", self.venta.kame_error_documento)
+        self.assertEqual(self.get.call_count, len(documentos.INTERVALOS_TIMBRE) + 1)
+        self.assertEqual(self.post.call_count, 1)
+        self.assertEqual(self.venta.estado_kame, 'ok')
+        self.assertFalse(self.venta.kame_timbre_disponible)
+        self.assertTrue(any(motivo in str(call) for call in salida.call_args_list))
+
+    def test_documento_ausente_en_json_puede_aparecer_sin_nueva_emision(self):
+        self.get.side_effect = [respuesta({"Estado": "Error", "Error": [
+            {"ErrorMessage": "Documento : No existe el documento electronico registrado en el ERP"}]}),
+            respuesta({"Estado": "Ok", "Xml": XML})]
+        documentos.preparar_timbre(self.db, self.venta, esperar=True)
+        self.assertTrue(self.venta.kame_timbre_disponible)
+        self.assertEqual(self.get.call_count, 2)
+        self.post.assert_not_called()
+
+    def test_rechazo_json_de_permisos_no_se_confunde_con_preparacion(self):
+        self.get.return_value = respuesta({"Estado": "Error", "Error": [
+            {"ErrorMessage": "Usuario no autorizado para consultar documentos"}]})
+        with self.assertRaisesRegex(documentos.DocumentoKameError, "Usuario no autorizado"):
+            documentos.preparar_timbre(self.db, self.venta, esperar=True)
+        self.assertEqual(self.get.call_count, 1)
+        self.post.assert_not_called()
+
+    def test_http_403_identifica_acceso_o_limite_sin_reintentos(self):
+        self.get.return_value = respuesta({}, 403)
+        with self.assertRaisesRegex(documentos.DocumentoKameError, "HTTP 403"):
+            documentos.preparar_timbre(self.db, self.venta, esperar=True)
+        self.assertIn("180", self.venta.kame_error_documento)
+        self.assertEqual(self.get.call_count, 1)
+
+    def test_error_documento_oculta_credenciales_en_pantalla_y_registro(self):
+        self.get.return_value = respuesta({"Estado": "Error", "Error": [
+            {"ErrorMessage": "Acceso rechazado Bearer TOKEN-SINTETICO para prueba@example.test"}]})
+        with patch('builtins.print') as salida, self.assertRaises(documentos.DocumentoKameError):
+            documentos.preparar_timbre(self.db, self.venta, esperar=True)
+        self.assertNotIn("TOKEN-SINTETICO", self.venta.kame_error_documento)
+        self.assertNotIn("prueba@example.test", self.venta.kame_error_documento)
+        self.assertNotIn("TOKEN-SINTETICO", str(salida.call_args_list))
+
+    def test_retry_after_no_consulta_antes_del_plazo_solicitado(self):
+        self.get.side_effect = [respuesta({}, 429, {"Retry-After": "4"}),
+                                respuesta({"Estado": "Ok", "Xml": XML})]
+        with patch('app.services.documentos_kame.time.sleep') as dormir:
+            documentos.preparar_timbre(self.db, self.venta, esperar=True)
+        dormir.assert_called_once_with(4)
+        self.assertEqual(self.get.call_count, 2)
+        self.post.assert_not_called()
+
+    def test_retry_after_largo_no_reintenta_dentro_de_atencion(self):
+        self.get.return_value = respuesta({}, 503, {"Retry-After": "60"})
+        with patch('app.services.documentos_kame.time.sleep') as dormir:
+            with self.assertRaisesRegex(documentos.DocumentoKameError, "HTTP 503"):
+                documentos.preparar_timbre(self.db, self.venta, esperar=True)
+        self.assertEqual(self.get.call_count, 1)
+        dormir.assert_not_called()
+        self.post.assert_not_called()
+
+    def test_retry_after_fecha_http_e_invalido(self):
+        from email.utils import formatdate
+        for valor, pausa in ((formatdate(1005, usegmt=True), 5), ('incorrecto', 1)):
+            with self.subTest(valor=valor):
+                self.get.side_effect = [respuesta({}, 429, {'Retry-After': valor}),
+                                        respuesta({'Estado': 'Ok', 'Xml': XML})]
+                ruta = documentos.ruta_cache(('76123456-0', '39', '456'), 'xml')
+                ruta.unlink(missing_ok=True)
+                with patch('app.services.kame_client.time.time', return_value=1000), \
+                     patch('app.services.documentos_kame.time.sleep') as dormir:
+                    documentos.preparar_timbre(self.db, self.venta, esperar=True)
+                dormir.assert_called_once_with(pausa)
+
+    def test_diagnostico_consulta_xml_pdf_y_registro_sin_escribir_ni_emitir(self):
+        self.get.side_effect = [respuesta({'Estado': 'Ok', 'Xml': XML}),
+                                respuesta({'ArchivoBase64PDF': base64.b64encode(PDF).decode()}),
+                                respuesta({'IdVenta': 123, 'Folio': 456, 'Total': 2000})]
+        informe = diagnosticar_venta(KameAPI(None), self.venta)
+        self.assertEqual(informe['xml_remoto'], {'disponible': True})
+        self.assertEqual(informe['pdf_remoto'], {'disponible': True})
+        self.assertEqual(informe['registro_erp'], {'disponible': True, 'folio_y_monto_coinciden': True})
+        self.assertEqual(self.get.call_count, 3)
+        self.assertIn('/getVenta/Boleta%20Electr%C3%B3nica/456', self.get.call_args.args[0])
+        self.assertFalse(documentos.ruta_cache(('76123456-0', '39', '456'), 'xml').exists())
+        self.assertFalse(self.venta.kame_timbre_disponible)
+        self.assertEqual(self.venta.kame_error_documento, '')
+        self.post.assert_not_called()
+
+    def test_diagnostico_distingue_registro_erp_de_documento_electronico(self):
+        error = {'Estado': 'Error', 'Error': [{'ErrorMessage': 'No existe el documento electronico registrado en el ERP'}]}
+        self.get.side_effect = [respuesta(error), respuesta(error),
+                                respuesta({'IdVenta': 123, 'Folio': 456, 'Total': 2000})]
+        informe = diagnosticar_venta(KameAPI(None), self.venta)
+        self.assertFalse(informe['xml_remoto']['disponible'])
+        self.assertFalse(informe['pdf_remoto']['disponible'])
+        self.assertIn('No existe el documento', informe['xml_remoto']['motivo'])
+        self.assertTrue(informe['registro_erp']['disponible'])
+        self.post.assert_not_called()
+
+    def test_lectura_diagnostico_no_crea_base_y_conserva_datos(self):
+        with tempfile.TemporaryDirectory() as directorio:
+            ruta = Path(directorio) / 'solo-lectura.db'
+            with self.assertRaises(sqlite3.OperationalError):
+                cargar_ventas(ruta)
+            self.assertFalse(ruta.exists())
+            with closing(sqlite3.connect(ruta)) as db:
+                db.execute('CREATE TABLE ventas (id INTEGER PRIMARY KEY, ticket TEXT, estado_kame TEXT, es_pase_libre INTEGER)')
+                db.executemany('INSERT INTO ventas VALUES (?, ?, ?, ?)', [
+                    (1, 'T1', 'ok', 0), (2, 'T2', 'mock', 0), (3, 'T3', 'ok', 0)])
+                db.commit()
+            original = ruta.read_bytes()
+            self.assertEqual([v.ticket for v in cargar_ventas(ruta, ultimas=1)], ['T3'])
+            self.assertEqual([v.ticket for v in cargar_ventas(ruta, ticket='T1')], ['T1'])
+            self.assertEqual(ruta.read_bytes(), original)
 
     def test_pendiente_de_otra_caja_no_bloquea(self):
         from app.routers.ventas import boleta_incompleta, consultar_boleta_en_curso
