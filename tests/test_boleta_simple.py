@@ -25,7 +25,7 @@ class BoletaSimpleTests(unittest.TestCase):
         with patch.object(receipt_layout, "get_config", lambda db, clave, defecto="": defecto):
             return receipt_layout.render_receipt(**argumentos)
 
-    def test_boleta_con_timbre_usa_el_formato_simple(self):
+    def test_boleta_con_datos_usa_el_formato_simple(self):
         usado = []
         original = receipt_layout._render_boleta_simple
         with patch.object(receipt_layout, "_render_boleta_simple",
@@ -41,10 +41,13 @@ class BoletaSimpleTests(unittest.TestCase):
             self.render(es_pase_libre=True)
             self.render(estado_kame="mock")
 
-    def test_timbre_mas_ancho_que_el_papel_se_rechaza(self):
-        with self.assertRaises(ValueError):
-            self.render(documento_tributario=self.documento(imagen=Image.new("1", (700, 100), 1)))
-
+    def test_imagen_del_timbre_no_se_imprime(self):
+        normal = self.render()
+        grande = self.render(documento_tributario=self.documento(imagen=Image.new("1", (700, 100), 0)))
+        self.assertEqual(normal.tobytes(), grande.tobytes())
+        sin_imagen = self.documento()
+        del sin_imagen["imagen"]
+        self.assertEqual(normal.tobytes(), self.render(documento_tributario=sin_imagen).tobytes())
 
 if __name__ == "__main__":
     unittest.main()

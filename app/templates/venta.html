@@ -142,7 +142,7 @@ function escaparResultado(valor) {
 function mostrarVentaConfirmada(venta, kame, impresion) {
   ventaParaImprimir = venta;
   const e = escaparResultado;
-  const incompleta = venta.estado_kame === "pendiente" || (venta.estado_kame === "ok" && !venta.kame_timbre_disponible);
+  const incompleta = venta.estado_kame === "pendiente";
   document.getElementById("resultado").innerHTML = `
     <section class="venta-confirmacion ${incompleta ? "venta-incompleta" : ""}" aria-label="Resultado de la venta">
       <div class="venta-confirmacion-cabecera">
@@ -156,7 +156,7 @@ function mostrarVentaConfirmada(venta, kame, impresion) {
         <div><span class="venta-confirmacion-etiqueta">Impresión</span><span>${e(impresion)}</span></div>
       </div>
       <div class="venta-confirmacion-acciones">
-        ${venta.estado_kame === "ok" ? '<button type="button" class="btn btn-azul" id="btn_recuperar_boleta" onclick="recuperarEImprimirBoleta(this)">Recuperar timbre e imprimir</button>' : ""}
+        ${venta.estado_kame === "ok" ? '<button type="button" class="btn btn-azul" id="btn_recuperar_boleta" onclick="recuperarEImprimirBoleta(this)">Imprimir boleta</button>' : ""}
         <a class="venta-confirmacion-pdf" href="/api/ventas/${encodeURIComponent(venta.ticket)}/pdf" target="_blank" rel="noopener">Ver PDF <span aria-hidden="true">↗</span></a>
       </div>
       <div id="estado_impresion" class="venta-confirmacion-estado" role="status"></div>
@@ -169,11 +169,11 @@ async function recuperarEImprimirBoleta(boton) {
   boton.disabled = true;
   ventaEnCurso = true;
   const estado = document.getElementById("estado_impresion");
-  estado.textContent = "Recuperando el timbre de esta misma boleta. Puede tardar hasta 2 minutos; no vuelvas a cobrar.";
+  estado.textContent = "Preparando impresión de la boleta.";
   try {
     const res = await equipoLocal.imprimir(venta.ticket);
     const actualizada = res.venta || venta;
-    mostrarVentaConfirmada(actualizada, `Boleta KAME: ${venta.folio_kame}`, "Timbre recuperado. Impresión solicitada.");
+    mostrarVentaConfirmada(actualizada, `Boleta Nº ${venta.folio_kame}`, "Impresión solicitada.");
     document.getElementById("estado_impresion").textContent = res.mensaje;
   } catch (error) {
     estado.textContent = error.message;
@@ -185,25 +185,23 @@ async function recuperarEImprimirBoleta(boton) {
 
 async function presentarVenta(venta) {
     if (venta.detalle_kame) alert(venta.detalle_kame);
-    const kame = venta.estado_kame === "ok" ? `Boleta KAME: ${venta.folio_kame}`
+    const kame = venta.estado_kame === "ok" ? `Boleta Nº ${venta.folio_kame}`
       : venta.estado_kame === "mock" ? `Boleta (modo prueba): ${venta.folio_kame}`
       : venta.estado_kame === "error" ? "Error KAME: revisa el aviso" : "Sin boleta KAME";
-    const impresion = venta.estado_kame === "ok"
-      ? (venta.kame_timbre_disponible ? "Timbre listo para impresión automática." : "Recuperando timbre para imprimir automáticamente esta boleta…")
-      : "Comprobante sin timbre de una boleta real.";
+    const impresion = 'Boleta disponible para imprimir.';
     boletaPorCompletar = venta.estado_kame === "pendiente" ? venta : null;
     mostrarVentaConfirmada(venta, kame, impresion);
     if (venta.estado_kame === "mock" || venta.estado_kame === "ok") {
       const boton = document.getElementById("btn_recuperar_boleta");
       if (boton) boton.disabled = true;
-      document.getElementById("estado_impresion").textContent = "Preparando impresión automática. Esperando el timbre de KAME…";
+      document.getElementById("estado_impresion").textContent = "Preparando impresión automática.";
       try {
-        // El endpoint espera el XML del mismo folio antes de abrir la impresión.
+        // Imprime la venta confirmada.
         const res = await equipoLocal.imprimir(venta.ticket);
-        if (res.venta) mostrarVentaConfirmada(res.venta, kame, "Timbre listo. Impresión solicitada.");
+        if (res.venta) mostrarVentaConfirmada(res.venta, kame, "Impresión solicitada.");
         document.getElementById("estado_impresion").textContent = res.mensaje;
       } catch (e) {
-        document.getElementById("estado_impresion").textContent = `${e.message} Reintenta con «Recuperar timbre e imprimir» aquí mismo, sin volver a cobrar.`;
+        document.getElementById("estado_impresion").textContent = `${e.message} Reintenta con «Imprimir boleta» aquí mismo, sin volver a cobrar.`;
       } finally {
         if (boton) boton.disabled = false;
       }
@@ -211,7 +209,7 @@ async function presentarVenta(venta) {
 }
 
 async function vender(servicio, boton) {
-  if (!iniciarVenta(`Procesando ${servicio.nombre} · ${fmtMonto(servicio.precio)}. Esperando confirmación de Kame…`, boton)) return;
+  if (!iniciarVenta(`Procesando ${servicio.nombre} · ${fmtMonto(servicio.precio)}. Esperando confirmación de la boleta…`, boton)) return;
   try {
     const venta = await api.post("/api/ventas", {
       servicio_id: servicio.id,

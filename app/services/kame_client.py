@@ -461,7 +461,7 @@ def emitir_boleta(db, servicio_nombre, monto_total, forma_pago, rut_cliente=None
     )
     if result['ok'] and ticket_num:
         from app.models import Venta
-        from app.services.documentos_kame import preparar_timbre
+
         venta = db.query(Venta).filter(Venta.ticket == ticket_num).first()
         if venta is not None:
             venta.kame_documento_id = result.get('id') or None
@@ -470,14 +470,4 @@ def emitir_boleta(db, servicio_nombre, monto_total, forma_pago, rut_cliente=None
             venta.folio_kame = result['folio']
             venta.estado_kame = 'ok'
             db.commit()
-            # Una falla al obtener el timbre nunca convierte una emision en fallida.
-            try:
-                # KAME puede confirmar el folio antes de publicar el XML firmado.
-                # Reintentar la consulta de esta misma boleta, sin volver a emitir.
-                preparar_timbre(db, venta, client=client, exigir=False, esperar=True)
-            except Exception:
-                # La emision confirmada no se repite por un fallo local de impresion.
-                import logging
-                logging.getLogger(__name__).exception("No se pudo preparar la impresion de la boleta emitida")
-                db.rollback()
     return (result['folio'], 'ok') if result['ok'] else (result['mensaje'], 'error')

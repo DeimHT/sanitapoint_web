@@ -101,7 +101,7 @@ def _lineas_escpos(ticket_num, servicio_nombre, monto, forma_pago, folio_kame,
     yield ("left", False, "")
     if not es_pase_libre:
         if estado_kame == "ok" and folio_kame:
-            yield ("left", False, f"Folio KAME: {folio_kame}")
+            yield ("left", False, f"Folio: {folio_kame}")
         elif estado_kame == "mock":
             yield ("left", True, "MODO PRUEBA - Sin emisión real")
         else:

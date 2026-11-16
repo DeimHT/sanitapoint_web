@@ -145,22 +145,6 @@ def _render_boleta_simple(db, servicio_nombre, monto, folio_kame, creado_en, tri
         escribir(f"El IVA incluido en esta boleta es de : {moneda(tributario['iva'])}", 21, True, gap=8)
     y += 6
 
-    # Timbre y datos de verificación.
-    timbre = tributario["imagen"]
-    if timbre.width > ancho:
-        raise ValueError("El timbre no cabe en el ancho del ticket")
-    image.paste(timbre, ((ancho - timbre.width) // 2, y))
-    y += timbre.height + 4
-    escribir("Timbre Electrónico S.I.I.", 22, True, align="center", gap=4)
-    numero, resolucion = tributario.get("resolucion_numero"), str(tributario.get("resolucion_fecha") or "")
-    if numero and resolucion:
-        try:
-            resolucion = datetime.strptime(resolucion, "%Y-%m-%d").strftime("%d-%m-%Y")
-        except ValueError:
-            pass
-        escribir(f"Res. {numero} del {resolucion}", 19, False, align="center", gap=14)
-    escribir("Documento electrónico emitido en www.kame.cl", 19, True, align="center", gap=4)
-    escribir("Verifique el documento en sii.cl", 19, True, align="center", gap=4)
     return image.crop((0, 0, ancho, y + 24)).convert("1")
 
 
@@ -213,7 +197,7 @@ def render_receipt(db, ticket_num, servicio_nombre, monto, forma_pago, folio_kam
     y += 18
     text(empresa("empresa_rut", "") or "RUT no configurado", 27, True)
     title = "PASE LIBRE" if es_pase_libre else (
-        "BOLETA ELECTRÓNICA" if estado_kame == "ok" and folio_kame and documento_tributario else
+        "BOLETA ELECTRÓNICA" if estado_kame == "ok" and folio_kame else
         "BOLETA DE PRUEBA" if estado_kame == "mock" else "COMPROBANTE DE VENTA")
     text(title, 28, True)
     text(str(folio_kame or ticket_num), 28, True, gap=18)
@@ -262,20 +246,6 @@ def render_receipt(db, ticket_num, servicio_nombre, monto, forma_pago, folio_kam
         text("MODO PRUEBA - Sin emisión real", 21, True)
     elif estado_kame != "ok" or not folio_kame:
         text("Boleta pendiente de emisión", 21, True)
-    elif documento_tributario:
-        timbre = tributario["imagen"]
-        if timbre.width > 576:
-            raise ValueError("El timbre no cabe en el ancho del ticket")
-        y += 10
-        image.paste(timbre, ((576 - timbre.width) // 2, y))
-        y += timbre.height
-        text("Timbre Electrónico SII", 19)
-        numero, fecha_resolucion = tributario.get("resolucion_numero"), tributario.get("resolucion_fecha")
-        if numero and fecha_resolucion:
-            text(f"Resolución N° {numero} de {fecha_resolucion}", 18)
-        text("Verifique documento: www.sii.cl", 18)
-    else:
-        text("Copia de venta sin timbre electrónico.\nDocumento tributario disponible en KAME.", 19)
     footer = get_config(db, "ticket_pie", "")
     if footer:
         y += 10

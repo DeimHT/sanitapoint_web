@@ -16,7 +16,7 @@ from app.routers.caja import _caja_abierta, bloquear_caja, comprobar_servicio
 from app.schemas import VentaIn, VentaOut
 from app.services import ticket_printer
 from app.services.kame_client import emitir_boleta, verificar_configuracion_punto_venta
-from app.services.documentos_kame import DocumentoKameError, obtener_pdf, preparar_timbre
+from app.services.documentos_kame import DocumentoKameError
 from app.services.cuadre import tipo_acceso
 
 router = APIRouter(prefix="/api/ventas", tags=["ventas"],
@@ -127,8 +127,7 @@ def registrar_venta(body: VentaIn, db: Session = Depends(get_db),
 
     out = VentaOut.model_validate(venta)
     out.detalle_kame = folio_kame if estado_kame == "error" else ""
-    out.detalle_impresion = (venta.kame_error_documento or "Timbre disponible para imprimir en este computador."
-                             if venta.estado_kame == "ok" else "Comprobante de prueba o venta sin timbre.")
+    out.detalle_impresion = 'Venta registrada. Boleta disponible para imprimir.'
     return out
 
 
@@ -162,14 +161,6 @@ def descargar_ticket_pdf(ticket: str, db: Session = Depends(get_db),
     venta = venta_autorizada(ticket, db, cuenta)
     if venta.es_pase_libre:
         raise HTTPException(400, "Los pases libres no generan boleta ni PDF")
-    if venta.estado_kame == "ok":
-        try:
-            path = obtener_pdf(venta)
-        except (DocumentoKameError, OSError) as error:
-            raise HTTPException(503, str(error) if isinstance(error, DocumentoKameError) else
-                                "No se pudo recuperar el PDF de KAME. Reintenta sin registrar otra venta.")
-        return FileResponse(path, media_type="application/pdf", filename=f"boleta-{venta.folio_kame}.pdf",
-                            headers={"Cache-Control": "no-store"})
     path = ticket_printer.generar_ticket_pdf(
         db, venta.ticket, venta.servicio_nombre, venta.monto, venta.forma_pago,
         venta.folio_kame, venta.estado_kame, venta.rut_cliente, venta.es_pase_libre,
@@ -188,12 +179,6 @@ def imprimir_boleta(ticket: str, db: Session = Depends(get_db),
         raise HTTPException(400, "Los pases libres no generan impresion")
     if venta.estado_kame == "pendiente":
         raise HTTPException(409, "La emision sigue en curso. Actualiza para consultar esta misma venta; no vuelvas a cobrar.")
-    if venta.estado_kame == "ok":
-        try:
-            preparar_timbre(db, venta, esperar=True)
-        except DocumentoKameError as error:
-            print(f'[IMPRESION] Bloqueada ticket={venta.ticket} folio={venta.folio_kame}: {error}', flush=True)
-            raise HTTPException(503, str(error))
     print(f'[IMPRESION] Preparada ticket={venta.ticket} folio={venta.folio_kame} caja={venta.caja_id}', flush=True)
     return {"ok": True, "mensaje": "Imprime desde el navegador de este computador.", "venta": VentaOut.model_validate(venta)}
 
@@ -226,17 +211,11 @@ def vista_impresion(ticket: str, db: Session = Depends(get_db),
         raise HTTPException(400, "Los pases libres no generan impresion")
     if venta.estado_kame == "pendiente":
         raise HTTPException(409, "La emision sigue en curso. Actualiza para consultar esta misma venta; no vuelvas a cobrar.")
-    documento = None
-    if venta.estado_kame == "ok":
-        try:
-            documento = preparar_timbre(db, venta)
-        except DocumentoKameError as error:
-            raise HTTPException(503, str(error))
     imagen = render_receipt(db, ticket_num=venta.ticket, servicio_nombre=venta.servicio_nombre,
         monto=venta.monto, forma_pago=venta.forma_pago, folio_kame=venta.folio_kame,
         estado_kame=venta.estado_kame, rut_cliente=venta.rut_cliente,
         es_pase_libre=False, creado_en=venta.creado_en, servicio_codigo=venta.servicio_id,
-        documento_tributario=documento)
+        documento_tributario=None)
     buffer = io.BytesIO()
     imagen.save(buffer, format="PNG")
     datos = base64.b64encode(buffer.getvalue()).decode("ascii")
